@@ -117,11 +117,14 @@ jobs:
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
         run: |
+          # Use a separate bucket for Lambda function code
+          LAMBDA_CODE_BUCKET="lambda-code-bucket"
+
           # Zip the Lambda function code
           zip lambda_function.zip src/lambda_function.py
           
-          # Upload the zipped file to S3
-          aws s3 cp lambda_function.zip s3://upload-textract-bucket/
+          # Upload the zipped file to the separate bucket
+          aws s3 cp lambda_function.zip s3://$LAMBDA_CODE_BUCKET/
           
           # Get the IAM Role ARN
           ROLE_ARN=$(aws iam get-role --role-name TextractLambdaExecutionRole --query 'Role.Arn' --output text)
@@ -131,7 +134,7 @@ jobs:
             echo "Lambda function exists. Updating code..."
             aws lambda update-function-code \
               --function-name TextractFunction \
-              --s3-bucket upload-textract-bucket \
+              --s3-bucket $LAMBDA_CODE_BUCKET \
               --s3-key lambda_function.zip
           else
             echo "Lambda function does not exist. Creating function..."
@@ -140,7 +143,7 @@ jobs:
               --runtime python3.8 \
               --role $ROLE_ARN \
               --handler lambda_function.lambda_handler \
-              --code S3Bucket=upload-textract-bucket,S3Key=lambda_function.zip \
+              --code S3Bucket=$LAMBDA_CODE_BUCKET,S3Key=lambda_function.zip \
               --timeout 300
           fi
 
