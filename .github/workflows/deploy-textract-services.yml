@@ -38,25 +38,7 @@ jobs:
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 5: Upload Lambda Function Code to S3
-      - name: Upload Lambda Function Code
-        run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          LAMBDA_ZIP_FILE="build/lambda_function.zip"
-
-          # Upload the Lambda function zip file to the S3 bucket
-          echo "Uploading Lambda function code to S3..."
-          aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
-
-      # Step 6: Verify CloudFormation Template Exists
-      - name: Verify CloudFormation Template
-        run: |
-          if [ ! -f textract.yaml ]; then
-            echo "Error: CloudFormation template (textract.yaml) is missing."
-            exit 1
-          fi
-
-      # Step 7: Deploy CloudFormation Stack
+      # Step 5: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           STACK_NAME="textract-stack"
@@ -72,6 +54,24 @@ jobs:
               TextractUploadBucketName="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
               DynamoDBTableName="TextractData" \
               LambdaFunctionName="TextractFunction"
+
+      # Step 6: Wait for CloudFormation Stack to Complete
+      - name: Wait for CloudFormation Stack Creation
+        run: |
+          STACK_NAME="textract-stack"
+          echo "Waiting for CloudFormation stack $STACK_NAME to complete..."
+          aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+          echo "CloudFormation stack $STACK_NAME created successfully."
+
+      # Step 7: Upload Lambda Function Code to S3
+      - name: Upload Lambda Function Code
+        run: |
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_ZIP_FILE="build/lambda_function.zip"
+
+          # Upload the Lambda function zip file to the S3 bucket
+          echo "Uploading Lambda function code to S3..."
+          aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
 
       # Step 8: Verify Deployment
       - name: Verify Deployment
