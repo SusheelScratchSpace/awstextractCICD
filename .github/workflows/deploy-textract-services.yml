@@ -44,22 +44,77 @@ jobs:
             echo "boto3 is already installed."
           fi
 
-      # Step 3: Create S3 Bucket for Uploads
-      - name: Create S3 Bucket for Uploads
+      # Step 3: Create S3 Buckets
+      - name: Create S3 Buckets
         run: |
-          if aws s3api head-bucket --bucket upload-textract-bucket > /dev/null 2>&1; then
-            echo "Bucket upload-textract-bucket already exists. Skipping creation."
+          LAMBDA_CODE_BUCKET="lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
+          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
+
+          # Create Lambda code bucket
+          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
+            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
           else
-            echo "Creating bucket upload-textract-bucket..."
+            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
             if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket upload-textract-bucket
+              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
             else
               aws s3api create-bucket \
-                --bucket upload-textract-bucket \
+                --bucket $LAMBDA_CODE_BUCKET \
                 --region ${{ secrets.AWS_REGION }} \
                 --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
             fi
           fi
+
+          # Create Textract upload bucket
+          if aws s3api head-bucket --bucket $TEXTRACT_UPLOAD_BUCKET > /dev/null 2>&1; then
+            echo "Bucket $TEXTRACT_UPLOAD_BUCKET already exists. Skipping creation."
+          else
+            echo "Creating bucket $TEXTRACT_UPLOAD_BUCKET..."
+            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket $TEXTRACT_UPLOAD_BUCKET
+            else
+              aws s3api create-bucket \
+                --bucket $TEXTRACT_UPLOAD_BUCKET \
+                --region ${{ secrets.AWS_REGION }} \
+                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            fi
+          fi
+
+          # Attach bucket policy to Lambda code bucket
+          echo '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/TextractLambdaExecutionRole"
+                },
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
+              }
+            ]
+          }' > lambda-code-bucket-policy.json
+          aws s3api put-bucket-policy \
+            --bucket $LAMBDA_CODE_BUCKET \
+            --policy file://lambda-code-bucket-policy.json
+
+          # Attach bucket policy to Textract upload bucket
+          echo '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "lambda.amazonaws.com"
+                },
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::'$TEXTRACT_UPLOAD_BUCKET'/*"
+              }
+            ]
+          }' > textract-upload-bucket-policy.json
+          aws s3api put-bucket-policy \
+            --bucket $TEXTRACT_UPLOAD_BUCKET \
+            --policy file://textract-upload-bucket-policy.json
 
       # Step 4: Create DynamoDB Table
       - name: Create DynamoDB Table
@@ -108,7 +163,11 @@ jobs:
                     "s3:GetObject",
                     "s3:PutObject"
                   ],
-                  "Resource": "*"
+                  "Resource": [
+                    "arn:aws:s3:::lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}/*",
+                    "arn:aws:s3:::upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}/*",
+                    "arn:aws:dynamodb:::table/TextractData"
+                  ]
                 }
               ]
             }' > policy.json
@@ -123,46 +182,12 @@ jobs:
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
         run: |
-          # Generate a unique bucket name for Lambda function code
           LAMBDA_CODE_BUCKET="lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
-
-          # Create the Lambda code bucket if it doesn't exist
-          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
-            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
-          else
-            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
-            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
-            else
-              aws s3api create-bucket \
-                --bucket $LAMBDA_CODE_BUCKET \
-                --region ${{ secrets.AWS_REGION }} \
-                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
-            fi
-          fi
-
-          # Attach bucket policy to allow uploads
-          echo '{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/TextractLambdaExecutionRole"
-                },
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
-              }
-            ]
-          }' > bucket-policy.json
-          aws s3api put-bucket-policy \
-            --bucket $LAMBDA_CODE_BUCKET \
-            --policy file://bucket-policy.json
 
           # Zip the Lambda function code
           zip lambda_function.zip src/lambda_function.py
           
-          # Upload the zipped file to the separate bucket
+          # Upload the zipped file to the Lambda code bucket
           aws s3 cp lambda_function.zip s3://$LAMBDA_CODE_BUCKET/
           
           # Get the IAM Role ARN
@@ -189,13 +214,14 @@ jobs:
       # Step 7: Configure S3 Bucket Notification
       - name: Configure S3 Bucket Notification
         run: |
+          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
           LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
           aws lambda add-permission \
             --function-name TextractFunction \
             --statement-id s3invoke \
             --action lambda:InvokeFunction \
             --principal s3.amazonaws.com \
-            --source-arn arn:aws:s3:::upload-textract-bucket || true
+            --source-arn arn:aws:s3:::$TEXTRACT_UPLOAD_BUCKET || true
           echo '{
             "LambdaFunctionConfigurations": [
               {
@@ -205,7 +231,7 @@ jobs:
             ]
           }' > notification.json
           aws s3api put-bucket-notification-configuration \
-            --bucket upload-textract-bucket \
+            --bucket $TEXTRACT_UPLOAD_BUCKET \
             --notification-configuration file://notification.json
 
       # Cleanup Step: Delete all AWS resources if the workflow fails
@@ -230,17 +256,17 @@ jobs:
             echo "DynamoDB table TextractData does not exist. Skipping."
           fi
 
-          # Delete the S3 bucket and its contents
-          if aws s3api head-bucket --bucket upload-textract-bucket > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket upload-textract-bucket..."
-            aws s3 rm s3://upload-textract-bucket --recursive
-            echo "Deleting S3 bucket upload-textract-bucket..."
-            aws s3api delete-bucket --bucket upload-textract-bucket
+          # Delete the S3 bucket for Textract uploads and its contents
+          if aws s3api head-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
+            aws s3 rm s3://upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} --recursive
+            echo "Deleting S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
+            aws s3api delete-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}
           else
-            echo "S3 bucket upload-textract-bucket does not exist. Skipping."
+            echo "S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} does not exist. Skipping."
           fi
 
-          # Delete the Lambda code bucket and its contents
+          # Delete the S3 bucket for Lambda code and its contents
           if aws s3api head-bucket --bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} > /dev/null 2>&1; then
             echo "Deleting all objects in S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
             aws s3 rm s3://lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} --recursive
