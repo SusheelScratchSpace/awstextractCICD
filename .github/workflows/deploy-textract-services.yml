@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
-
+      
       # Step 5: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code
         run: |
@@ -58,6 +58,15 @@ jobs:
                 --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
             fi
           fi
+
+          # Disable Block Public Access for the bucket
+          echo "Disabling Block Public Access for bucket $LAMBDA_CODE_BUCKET..."
+          aws s3api put-public-access-block --bucket $LAMBDA_CODE_BUCKET --public-access-block-configuration '{
+            "BlockPublicAcls": false,
+            "IgnorePublicAcls": false,
+            "BlockPublicPolicy": false,
+            "RestrictPublicBuckets": false
+          }'
 
           # Add bucket policy or permissions (if required)
           echo "Adding bucket policy to $LAMBDA_CODE_BUCKET..."
