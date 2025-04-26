@@ -101,6 +101,8 @@ jobs:
             --role-name TextractLambdaExecutionRole \
             --policy-name TextractAndDynamoDBPolicy \
             --policy-document file://policy.json
+          echo "Waiting for IAM role to propagate..."
+          sleep 10 # Wait for IAM role to propagate
 
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
