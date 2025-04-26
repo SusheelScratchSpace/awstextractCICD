@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
-      
+
       # Step 5: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code
         run: |
@@ -98,8 +98,8 @@ jobs:
       # Step 7: Upload CloudFormation Template to S3
       - name: Upload CloudFormation Template
         run: |
-          TEMPLATE_FILE="textract.yaml"
           TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          TEMPLATE_FILE="textract.yaml"
 
           # Check if the S3 bucket exists
           if aws s3api head-bucket --bucket $TEMPLATE_BUCKET > /dev/null 2>&1; then
