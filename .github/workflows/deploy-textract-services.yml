@@ -44,8 +44,8 @@ jobs:
             echo "boto3 is already installed."
           fi
 
-      # Step 3: Create S3 Bucket
-      - name: Create S3 Bucket
+      # Step 3: Create S3 Bucket for Uploads
+      - name: Create S3 Bucket for Uploads
         run: |
           if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
             aws s3api create-bucket \
@@ -100,7 +100,8 @@ jobs:
                   "Effect": "Allow",
                   "Action": [
                     "textract:*",
-                    "dynamodb:*"
+                    "dynamodb:*",
+                    "s3:GetObject"
                   ],
                   "Resource": "*"
                 }
