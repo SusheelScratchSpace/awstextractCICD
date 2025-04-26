@@ -1,12 +1,14 @@
-name: Deploy AWS Textract Services
+name: AWS Textract Workflow
 
 on:
   push:
     branches:
       - main  # Trigger the workflow on pushes to the 'main' branch
+  workflow_dispatch:  # Allow manual triggering for delete services
 
 jobs:
-  deploy:
+  build:
+    name: Build Resources
     runs-on: ubuntu-latest
 
     steps:
@@ -44,7 +46,13 @@ jobs:
             echo "boto3 is already installed."
           fi
 
-      # Step 3: Create S3 Buckets
+  deploy:
+    name: Deploy Resources
+    runs-on: ubuntu-latest
+    needs: build  # Ensure the build job completes before deploying
+
+    steps:
+      # Step 1: Create S3 Buckets
       - name: Create S3 Buckets
         run: |
           # Generate unique bucket names
@@ -117,7 +125,7 @@ jobs:
             --bucket $TEXTRACT_UPLOAD_BUCKET \
             --policy file://textract-upload-bucket-policy.json
 
-      # Step 4: Create DynamoDB Table
+      # Step 2: Create DynamoDB Table
       - name: Create DynamoDB Table
         run: |
           if aws dynamodb describe-table --table-name TextractData > /dev/null 2>&1; then
@@ -131,7 +139,7 @@ jobs:
               --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
           fi
 
-      # Step 5: Create IAM Role
+      # Step 3: Create IAM Role
       - name: Create IAM Role
         run: |
           if aws iam get-role --role-name TextractLambdaExecutionRole > /dev/null 2>&1; then
@@ -180,7 +188,7 @@ jobs:
             sleep 10
           fi
 
-      # Step 6: Deploy or Update Lambda Function
+      # Step 4: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
         run: |
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
@@ -212,7 +220,7 @@ jobs:
               --timeout 300
           fi
 
-      # Step 7: Configure S3 Bucket Notification
+      # Step 5: Configure S3 Bucket Notification
       - name: Configure S3 Bucket Notification
         run: |
           TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
@@ -235,9 +243,13 @@ jobs:
             --bucket $TEXTRACT_UPLOAD_BUCKET \
             --notification-configuration file://notification.json
 
-      # Cleanup Step: Delete all AWS resources if the workflow fails
+  delete:
+    name: Delete Resources
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}  # Only run when manually triggered
+
+    steps:
       - name: Cleanup AWS Resources
-        if: failure()  # Run this step only if the workflow fails
         run: |
           echo "Cleaning up AWS resources..."
 
