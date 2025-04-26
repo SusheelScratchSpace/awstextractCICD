@@ -165,8 +165,8 @@ jobs:
                     "s3:PutObject"
                   ],
                   "Resource": [
-                    "arn:aws:s3:::lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}/*",
-                    "arn:aws:s3:::upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}/*",
+                    "arn:aws:s3:::python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}/*",
+                    "arn:aws:s3:::upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}/*",
                     "arn:aws:dynamodb:::table/TextractData"
                   ]
                 }
@@ -183,7 +183,7 @@ jobs:
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
         run: |
-          LAMBDA_CODE_BUCKET="lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
 
           # Zip the Lambda function code
           zip lambda_function.zip src/lambda_function.py
@@ -215,7 +215,7 @@ jobs:
       # Step 7: Configure S3 Bucket Notification
       - name: Configure S3 Bucket Notification
         run: |
-          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
+          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
           LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
           aws lambda add-permission \
             --function-name TextractFunction \
@@ -258,23 +258,23 @@ jobs:
           fi
 
           # Delete the S3 bucket for Textract uploads and its contents
-          if aws s3api head-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
-            aws s3 rm s3://upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} --recursive
-            echo "Deleting S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
-            aws s3api delete-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}
+          if aws s3api head-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
+            aws s3 rm s3://upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} --recursive
+            echo "Deleting S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
+            aws s3api delete-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}
           else
-            echo "S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }} does not exist. Skipping."
+            echo "S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} does not exist. Skipping."
           fi
 
           # Delete the S3 bucket for Lambda code and its contents
-          if aws s3api head-bucket --bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
-            aws s3 rm s3://lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} --recursive
-            echo "Deleting S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
-            aws s3api delete-bucket --bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}
+          if aws s3api head-bucket --bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
+            aws s3 rm s3://python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} --recursive
+            echo "Deleting S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
+            aws s3api delete-bucket --bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}
           else
-            echo "S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} does not exist. Skipping."
+            echo "S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} does not exist. Skipping."
           fi
 
           # Delete the IAM role
