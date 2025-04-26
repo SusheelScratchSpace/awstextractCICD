@@ -65,6 +65,13 @@ Resources:
                 Action:
                   - textract:AnalyzeDocument
                 Resource: "*"
+              # Allow Lambda to write logs to CloudWatch
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
 
   # Lambda Function for Processing S3 Events
   TextractFunction:
