@@ -60,7 +60,11 @@ jobs:
         run: |
           STACK_NAME="textract-stack"
           echo "Waiting for CloudFormation stack $STACK_NAME to complete..."
-          aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+          aws cloudformation wait stack-create-complete --stack-name $STACK_NAME || {
+            echo "Stack creation failed. Fetching stack events..."
+            aws cloudformation describe-stack-events --stack-name $STACK_NAME
+            exit 1
+          }
           echo "CloudFormation stack $STACK_NAME created successfully."
 
       # Step 7: Upload Lambda Function Code to S3
