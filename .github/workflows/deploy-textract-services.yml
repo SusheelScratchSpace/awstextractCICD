@@ -123,8 +123,8 @@ jobs:
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
         run: |
-          # Use a separate bucket for Lambda function code
-          LAMBDA_CODE_BUCKET="lambda-code-bucket"
+          # Generate a unique bucket name for Lambda function code
+          LAMBDA_CODE_BUCKET="lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
 
           # Create the Lambda code bucket if it doesn't exist
           if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
@@ -241,13 +241,13 @@ jobs:
           fi
 
           # Delete the Lambda code bucket and its contents
-          if aws s3api head-bucket --bucket lambda-code-bucket > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket lambda-code-bucket..."
-            aws s3 rm s3://lambda-code-bucket --recursive
-            echo "Deleting S3 bucket lambda-code-bucket..."
-            aws s3api delete-bucket --bucket lambda-code-bucket
+          if aws s3api head-bucket --bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
+            aws s3 rm s3://lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} --recursive
+            echo "Deleting S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}..."
+            aws s3api delete-bucket --bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}
           else
-            echo "S3 bucket lambda-code-bucket does not exist. Skipping."
+            echo "S3 bucket lambda-code-bucket-${{ secrets.AWS_ACCOUNT_ID }} does not exist. Skipping."
           fi
 
           # Delete the IAM role
