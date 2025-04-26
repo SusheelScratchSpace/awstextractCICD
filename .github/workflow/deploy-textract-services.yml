@@ -1,0 +1,150 @@
+name: Deploy AWS Textract Services
+
+on:
+  push:
+    branches:
+      - main  # Trigger the workflow on pushes to the 'main' branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Step 2.1: Install AWS CLI v2 (if not already installed)
+      - name: Install AWS CLI v2
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "AWS CLI not found. Installing..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          else
+            echo "AWS CLI is already installed."
+          fi
+
+      # Step 2.2: Install boto3 (if not already installed)
+      - name: Install boto3
+        run: |
+          if ! python3 -c "import boto3" &> /dev/null; then
+            echo "boto3 not found. Installing..."
+            python3 -m pip install boto3
+          else
+            echo "boto3 is already installed."
+          fi
+
+      # Step 3: Create S3 Bucket
+      - name: Create S3 Bucket
+        run: |
+          aws s3api create-bucket \
+            --bucket upload-textract-bucket \
+            --region ${{ secrets.AWS_REGION }} \
+            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+
+      # Step 4: Create DynamoDB Table
+      - name: Create DynamoDB Table
+        run: |
+          aws dynamodb create-table \
+            --table-name TextractData \
+            --attribute-definitions AttributeName=DocumentId,AttributeType=S \
+            --key-schema AttributeName=DocumentId,KeyType=HASH \
+            --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+
+      # Step 5: Create IAM Role
+      - name: Create IAM Role
+        run: |
+          echo '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+              }
+            ]
+          }' > assume-role-policy.json
+          aws iam create-role \
+            --role-name TextractLambdaExecutionRole \
+            --assume-role-policy-document file://assume-role-policy.json
+          echo '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "textract:*",
+                  "dynamodb:*"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }' > policy.json
+          aws iam put-role-policy \
+            --role-name TextractLambdaExecutionRole \
+            --policy-name TextractAndDynamoDBPolicy \
+            --policy-document file://policy.json
+
+      # Step 6: Deploy or Update Lambda Function
+      - name: Deploy or Update Lambda Function
+        run: |
+          # Zip the Lambda function code
+          zip lambda_function.zip src/lambda_function.py
+          
+          # Upload the zipped file to S3
+          aws s3 cp lambda_function.zip s3://upload-textract-bucket/
+          
+          # Get the IAM Role ARN
+          ROLE_ARN=$(aws iam get-role --role-name TextractLambdaExecutionRole --query 'Role.Arn' --output text)
+          
+          # Check if the Lambda function exists
+          if aws lambda get-function --function-name TextractFunction > /dev/null 2>&1; then
+            echo "Lambda function exists. Updating code..."
+            aws lambda update-function-code \
+              --function-name TextractFunction \
+              --s3-bucket upload-textract-bucket \
+              --s3-key lambda_function.zip
+          else
+            echo "Lambda function does not exist. Creating function..."
+            aws lambda create-function \
+              --function-name TextractFunction \
+              --runtime python3.8 \
+              --role $ROLE_ARN \
+              --handler lambda_function.lambda_handler \
+              --code S3Bucket=upload-textract-bucket,S3Key=lambda_function.zip \
+              --timeout 300
+          fi
+
+      # Step 7: Configure S3 Bucket Notification
+      - name: Configure S3 Bucket Notification
+        run: |
+          LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
+          aws lambda add-permission \
+            --function-name TextractFunction \
+            --statement-id s3invoke \
+            --action lambda:InvokeFunction \
+            --principal s3.amazonaws.com \
+            --source-arn arn:aws:s3:::upload-textract-bucket || true
+          echo '{
+            "LambdaFunctionConfigurations": [
+              {
+                "LambdaFunctionArn": "'$LAMBDA_ARN'",
+                "Events": ["s3:ObjectCreated:Put"]
+              }
+            ]
+          }' > notification.json
+          aws s3api put-bucket-notification-configuration \
+            --bucket upload-textract-bucket \
+            --notification-configuration file://notification.json
