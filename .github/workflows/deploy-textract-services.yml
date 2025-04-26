@@ -47,14 +47,18 @@ jobs:
       # Step 3: Create S3 Bucket for Uploads
       - name: Create S3 Bucket for Uploads
         run: |
-          if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-            aws s3api create-bucket \
-              --bucket upload-textract-bucket
+          if aws s3api head-bucket --bucket upload-textract-bucket > /dev/null 2>&1; then
+            echo "Bucket upload-textract-bucket already exists. Skipping creation."
           else
-            aws s3api create-bucket \
-              --bucket upload-textract-bucket \
-              --region ${{ secrets.AWS_REGION }} \
-              --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            echo "Creating bucket upload-textract-bucket..."
+            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket upload-textract-bucket
+            else
+              aws s3api create-bucket \
+                --bucket upload-textract-bucket \
+                --region ${{ secrets.AWS_REGION }} \
+                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            fi
           fi
 
       # Step 4: Create DynamoDB Table
@@ -101,7 +105,8 @@ jobs:
                   "Action": [
                     "textract:*",
                     "dynamodb:*",
-                    "s3:GetObject"
+                    "s3:GetObject",
+                    "s3:PutObject"
                   ],
                   "Resource": "*"
                 }
@@ -120,6 +125,39 @@ jobs:
         run: |
           # Use a separate bucket for Lambda function code
           LAMBDA_CODE_BUCKET="lambda-code-bucket"
+
+          # Create the Lambda code bucket if it doesn't exist
+          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
+            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
+          else
+            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
+            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
+            else
+              aws s3api create-bucket \
+                --bucket $LAMBDA_CODE_BUCKET \
+                --region ${{ secrets.AWS_REGION }} \
+                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            fi
+          fi
+
+          # Attach bucket policy to allow uploads
+          echo '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/TextractLambdaExecutionRole"
+                },
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
+              }
+            ]
+          }' > bucket-policy.json
+          aws s3api put-bucket-policy \
+            --bucket $LAMBDA_CODE_BUCKET \
+            --policy file://bucket-policy.json
 
           # Zip the Lambda function code
           zip lambda_function.zip src/lambda_function.py
@@ -200,6 +238,16 @@ jobs:
             aws s3api delete-bucket --bucket upload-textract-bucket
           else
             echo "S3 bucket upload-textract-bucket does not exist. Skipping."
+          fi
+
+          # Delete the Lambda code bucket and its contents
+          if aws s3api head-bucket --bucket lambda-code-bucket > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket lambda-code-bucket..."
+            aws s3 rm s3://lambda-code-bucket --recursive
+            echo "Deleting S3 bucket lambda-code-bucket..."
+            aws s3api delete-bucket --bucket lambda-code-bucket
+          else
+            echo "S3 bucket lambda-code-bucket does not exist. Skipping."
           fi
 
           # Delete the IAM role
