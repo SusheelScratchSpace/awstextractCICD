@@ -59,6 +59,21 @@ jobs:
             fi
           fi
 
+          # Add bucket policy or permissions (if required)
+          echo "Adding bucket policy to $LAMBDA_CODE_BUCKET..."
+          BUCKET_POLICY='{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
+              }
+            ]
+          }'
+          aws s3api put-bucket-policy --bucket $LAMBDA_CODE_BUCKET --policy "$BUCKET_POLICY"
+
           # Upload the Lambda function zip file to the S3 bucket
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
@@ -91,6 +106,21 @@ jobs:
                 --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
             fi
           fi
+
+          # Add bucket policy or permissions (if required)
+          echo "Adding bucket policy to $TEMPLATE_BUCKET..."
+          BUCKET_POLICY='{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::'$TEMPLATE_BUCKET'/*"
+              }
+            ]
+          }'
+          aws s3api put-bucket-policy --bucket $TEMPLATE_BUCKET --policy "$BUCKET_POLICY"
 
           # Upload the CloudFormation template to the S3 bucket
           echo "Uploading CloudFormation template to S3..."
