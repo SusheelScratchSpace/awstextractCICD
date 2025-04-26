@@ -5,12 +5,12 @@ Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref LambdaCodeBucketName
+      BucketName: !Sub "${LambdaCodeBucketName}-${AWS::StackName}-${AWS::Region}"
 
   TextractUploadBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref TextractUploadBucketName
+      BucketName: !Sub "${TextractUploadBucketName}-${AWS::StackName}-${AWS::Region}"
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:Put"

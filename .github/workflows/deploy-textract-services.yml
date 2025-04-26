@@ -44,45 +44,6 @@ jobs:
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
           LAMBDA_ZIP_FILE="build/lambda_function.zip"
 
-          # Check if the S3 bucket exists
-          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
-            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
-          else
-            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
-            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
-            else
-              aws s3api create-bucket \
-                --bucket $LAMBDA_CODE_BUCKET \
-                --region ${{ secrets.AWS_REGION }} \
-                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
-            fi
-          fi
-
-          # Disable Block Public Access for the bucket
-          echo "Disabling Block Public Access for bucket $LAMBDA_CODE_BUCKET..."
-          aws s3api put-public-access-block --bucket $LAMBDA_CODE_BUCKET --public-access-block-configuration '{
-            "BlockPublicAcls": false,
-            "IgnorePublicAcls": false,
-            "BlockPublicPolicy": false,
-            "RestrictPublicBuckets": false
-          }'
-
-          # Add bucket policy or permissions (if required)
-          echo "Adding bucket policy to $LAMBDA_CODE_BUCKET..."
-          BUCKET_POLICY='{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": "*",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
-              }
-            ]
-          }'
-          aws s3api put-bucket-policy --bucket $LAMBDA_CODE_BUCKET --policy "$BUCKET_POLICY"
-
           # Upload the Lambda function zip file to the S3 bucket
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
@@ -95,51 +56,10 @@ jobs:
             exit 1
           fi
 
-      # Step 7: Upload CloudFormation Template to S3
-      - name: Upload CloudFormation Template
-        run: |
-          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          TEMPLATE_FILE="textract.yaml"
-
-          # Check if the S3 bucket exists
-          if aws s3api head-bucket --bucket $TEMPLATE_BUCKET > /dev/null 2>&1; then
-            echo "Bucket $TEMPLATE_BUCKET already exists. Skipping creation."
-          else
-            echo "Creating bucket $TEMPLATE_BUCKET..."
-            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket $TEMPLATE_BUCKET
-            else
-              aws s3api create-bucket \
-                --bucket $TEMPLATE_BUCKET \
-                --region ${{ secrets.AWS_REGION }} \
-                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
-            fi
-          fi
-
-          # Add bucket policy or permissions (if required)
-          echo "Adding bucket policy to $TEMPLATE_BUCKET..."
-          BUCKET_POLICY='{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": "*",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::'$TEMPLATE_BUCKET'/*"
-              }
-            ]
-          }'
-          aws s3api put-bucket-policy --bucket $TEMPLATE_BUCKET --policy "$BUCKET_POLICY"
-
-          # Upload the CloudFormation template to the S3 bucket
-          echo "Uploading CloudFormation template to S3..."
-          aws s3 cp $TEMPLATE_FILE s3://$TEMPLATE_BUCKET/
-
-      # Step 8: Deploy CloudFormation Stack
+      # Step 7: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           STACK_NAME="textract-stack"
-          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
           TEMPLATE_FILE="textract.yaml"
 
           # Deploy the CloudFormation stack
@@ -153,7 +73,7 @@ jobs:
               DynamoDBTableName="TextractData" \
               LambdaFunctionName="TextractFunction"
 
-      # Step 9: Verify Deployment
+      # Step 8: Verify Deployment
       - name: Verify Deployment
         run: |
           echo "Verifying deployment..."
@@ -174,25 +94,3 @@ jobs:
           echo "Waiting for CloudFormation stack to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
           echo "CloudFormation stack deleted successfully."
-
-          # Delete the S3 bucket for Lambda code and its contents
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket $LAMBDA_CODE_BUCKET..."
-            aws s3 rm s3://$LAMBDA_CODE_BUCKET --recursive
-            echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
-            aws s3api delete-bucket --bucket $LAMBDA_CODE_BUCKET
-          else
-            echo "S3 bucket $LAMBDA_CODE_BUCKET does not exist. Skipping."
-          fi
-
-          # Delete the S3 bucket for CloudFormation templates and its contents
-          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          if aws s3api head-bucket --bucket $TEMPLATE_BUCKET > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket $TEMPLATE_BUCKET..."
-            aws s3 rm s3://$TEMPLATE_BUCKET --recursive
-            echo "Deleting S3 bucket $TEMPLATE_BUCKET..."
-            aws s3api delete-bucket --bucket $TEMPLATE_BUCKET
-          else
-            echo "S3 bucket $TEMPLATE_BUCKET does not exist. Skipping."
-          fi
