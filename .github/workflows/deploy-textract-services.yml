@@ -74,40 +74,45 @@ jobs:
       # Step 5: Create IAM Role
       - name: Create IAM Role
         run: |
-          echo '{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "Service": "lambda.amazonaws.com"
-                },
-                "Action": "sts:AssumeRole"
-              }
-            ]
-          }' > assume-role-policy.json
-          aws iam create-role \
-            --role-name TextractLambdaExecutionRole \
-            --assume-role-policy-document file://assume-role-policy.json
-          echo '{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Action": [
-                  "textract:*",
-                  "dynamodb:*"
-                ],
-                "Resource": "*"
-              }
-            ]
-          }' > policy.json
-          aws iam put-role-policy \
-            --role-name TextractLambdaExecutionRole \
-            --policy-name TextractAndDynamoDBPolicy \
-            --policy-document file://policy.json
-          echo "Waiting for IAM role to propagate..."
-          sleep 10 # Wait for IAM role to propagate
+          if aws iam get-role --role-name TextractLambdaExecutionRole > /dev/null 2>&1; then
+            echo "IAM role TextractLambdaExecutionRole already exists. Skipping creation."
+          else
+            echo "Creating IAM role TextractLambdaExecutionRole..."
+            echo '{
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+                }
+              ]
+            }' > assume-role-policy.json
+            aws iam create-role \
+              --role-name TextractLambdaExecutionRole \
+              --assume-role-policy-document file://assume-role-policy.json
+            echo '{
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "textract:*",
+                    "dynamodb:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }' > policy.json
+            aws iam put-role-policy \
+              --role-name TextractLambdaExecutionRole \
+              --policy-name TextractAndDynamoDBPolicy \
+              --policy-document file://policy.json
+            echo "Waiting for IAM role to propagate..."
+            sleep 10
+          fi
 
       # Step 6: Deploy or Update Lambda Function
       - name: Deploy or Update Lambda Function
