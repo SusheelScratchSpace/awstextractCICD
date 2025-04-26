@@ -24,11 +24,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 3: Upload Lambda Function Code to S3
+      # Step 3: Verify Lambda Function Code Exists
+      - name: Verify Lambda Function Code
+        run: |
+          if [ ! -f src/lambda_function.py ]; then
+            echo "Error: Lambda function code (src/lambda_function.py) is missing."
+            exit 1
+          fi
+
+      # Step 4: Zip the Lambda Function Code
+      - name: Zip Lambda Function Code
+        run: |
+          mkdir -p build
+          zip -j build/lambda_function.zip src/lambda_function.py
+
+      # Step 5: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code
         run: |
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          LAMBDA_ZIP_FILE="lambda_function.zip"
+          LAMBDA_ZIP_FILE="build/lambda_function.zip"
 
           # Check if the S3 bucket exists
           if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
@@ -49,7 +63,15 @@ jobs:
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
 
-      # Step 4: Upload CloudFormation Template to S3
+      # Step 6: Verify CloudFormation Template Exists
+      - name: Verify CloudFormation Template
+        run: |
+          if [ ! -f textract.yaml ]; then
+            echo "Error: CloudFormation template (textract.yaml) is missing."
+            exit 1
+          fi
+
+      # Step 7: Upload CloudFormation Template to S3
       - name: Upload CloudFormation Template
         run: |
           TEMPLATE_FILE="textract.yaml"
@@ -74,7 +96,7 @@ jobs:
           echo "Uploading CloudFormation template to S3..."
           aws s3 cp $TEMPLATE_FILE s3://$TEMPLATE_BUCKET/
 
-      # Step 5: Deploy CloudFormation Stack
+      # Step 8: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           STACK_NAME="textract-stack"
@@ -92,7 +114,7 @@ jobs:
               DynamoDBTableName="TextractData" \
               LambdaFunctionName="TextractFunction"
 
-      # Step 6: Verify Deployment
+      # Step 9: Verify Deployment
       - name: Verify Deployment
         run: |
           echo "Verifying deployment..."
