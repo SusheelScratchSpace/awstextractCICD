@@ -97,3 +97,41 @@ jobs:
         run: |
           echo "Verifying deployment..."
           aws cloudformation describe-stacks --stack-name textract-stack
+
+      # Cleanup Step: Delete all AWS resources if the workflow fails
+      - name: Cleanup AWS Resources
+        if: failure()  # Run this step only if the workflow fails
+        run: |
+          echo "Cleaning up AWS resources..."
+
+          # Delete the CloudFormation stack
+          STACK_NAME="textract-stack"
+          echo "Deleting CloudFormation stack $STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $STACK_NAME
+
+          # Wait for the stack to be deleted
+          echo "Waiting for CloudFormation stack to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
+          echo "CloudFormation stack deleted successfully."
+
+          # Delete the S3 bucket for Lambda code and its contents
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket $LAMBDA_CODE_BUCKET..."
+            aws s3 rm s3://$LAMBDA_CODE_BUCKET --recursive
+            echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
+            aws s3api delete-bucket --bucket $LAMBDA_CODE_BUCKET
+          else
+            echo "S3 bucket $LAMBDA_CODE_BUCKET does not exist. Skipping."
+          fi
+
+          # Delete the S3 bucket for CloudFormation templates and its contents
+          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          if aws s3api head-bucket --bucket $TEMPLATE_BUCKET > /dev/null 2>&1; then
+            echo "Deleting all objects in S3 bucket $TEMPLATE_BUCKET..."
+            aws s3 rm s3://$TEMPLATE_BUCKET --recursive
+            echo "Deleting S3 bucket $TEMPLATE_BUCKET..."
+            aws s3api delete-bucket --bucket $TEMPLATE_BUCKET
+          else
+            echo "S3 bucket $TEMPLATE_BUCKET does not exist. Skipping."
+          fi
