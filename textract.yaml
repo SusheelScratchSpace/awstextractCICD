@@ -64,7 +64,7 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
         S3Key: lambda_function.zip
-      Timeout: 300
+      Timeout: 301
 
 Parameters:
   LambdaCodeBucketName:
