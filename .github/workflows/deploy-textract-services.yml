@@ -47,10 +47,15 @@ jobs:
       # Step 3: Create S3 Bucket
       - name: Create S3 Bucket
         run: |
-          aws s3api create-bucket \
-            --bucket upload-textract-bucket \
-            --region ${{ secrets.AWS_REGION }} \
-            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+          if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+            aws s3api create-bucket \
+              --bucket upload-textract-bucket
+          else
+            aws s3api create-bucket \
+              --bucket upload-textract-bucket \
+              --region ${{ secrets.AWS_REGION }} \
+              --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+          fi
 
       # Step 4: Create DynamoDB Table
       - name: Create DynamoDB Table
