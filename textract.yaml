@@ -2,16 +2,23 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: AWS Textract Workflow Resources
 
 Resources:
+  # S3 Bucket for Lambda Code
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${LambdaCodeBucketName}-${AWS::AccountId}-${AWS::Region}"
 
+  # S3 Bucket for Uploads (Triggers Lambda)
   TextractUploadBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt TextractFunction.Arn
 
+  # DynamoDB Table for Storing Extracted Data
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -26,6 +33,7 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
+  # IAM Role for Lambda Execution
   TextractLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -42,21 +50,23 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # Allow Lambda to read from the upload bucket
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                  - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${LambdaCodeBucketName}-${AWS::AccountId}-${AWS::Region}/*"
+                Resource: !Sub "arn:aws:s3:::${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}/*"
+              # Allow Lambda to write to the DynamoDB table
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
-                  - dynamodb:GetItem
                 Resource: !GetAtt DynamoDBTable.Arn
+              # Allow Lambda to call Textract
               - Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
                 Resource: "*"
 
+  # Lambda Function for Processing S3 Events
   TextractFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -68,7 +78,11 @@ Resources:
         S3Bucket: !Ref LambdaCodeBucketName
         S3Key: lambda_function.zip
       Timeout: 300
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
 
+  # Permission for S3 to Invoke Lambda
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -80,9 +94,13 @@ Resources:
 Parameters:
   LambdaCodeBucketName:
     Type: String
+    Description: Name of the S3 bucket where the Lambda function code is stored
   TextractUploadBucketName:
     Type: String
+    Description: Name of the S3 bucket where files are uploaded for processing
   DynamoDBTableName:
     Type: String
+    Description: Name of the DynamoDB table for storing extracted data
   LambdaFunctionName:
     Type: String
+    Description: Name of the Lambda function
