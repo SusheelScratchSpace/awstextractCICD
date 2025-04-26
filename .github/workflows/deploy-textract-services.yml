@@ -3,8 +3,8 @@ name: AWS Textract Workflow
 on:
   push:
     branches:
-      - main  # Trigger the workflow on pushes to the 'main' branch
-  workflow_dispatch:  # Allow manual triggering for delete services
+      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -38,13 +38,38 @@ jobs:
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 5: Deploy CloudFormation Stack
+      # Step 5: Create S3 Bucket for Lambda Code
+      - name: Create S3 Bucket for Lambda Code
+        run: |
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
+            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
+          else
+            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
+            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
+            else
+              aws s3api create-bucket \
+                --bucket $LAMBDA_CODE_BUCKET \
+                --region ${{ secrets.AWS_REGION }} \
+                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            fi
+          fi
+
+      # Step 6: Upload Lambda Function Code to S3
+      - name: Upload Lambda Function Code
+        run: |
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_ZIP_FILE="build/lambda_function.zip"
+          echo "Uploading Lambda function code to S3..."
+          aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
+
+      # Step 7: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           STACK_NAME="textract-stack"
           TEMPLATE_FILE="textract.yaml"
-
-          # Deploy the CloudFormation stack
+          echo "Deploying CloudFormation stack $STACK_NAME..."
           aws cloudformation deploy \
             --stack-name $STACK_NAME \
             --template-file $TEMPLATE_FILE \
@@ -55,7 +80,7 @@ jobs:
               DynamoDBTableName="TextractData" \
               LambdaFunctionName="TextractFunction"
 
-      # Step 6: Wait for CloudFormation Stack to Complete
+      # Step 8: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack Creation
         run: |
           STACK_NAME="textract-stack"
@@ -67,17 +92,7 @@ jobs:
           }
           echo "CloudFormation stack $STACK_NAME created successfully."
 
-      # Step 7: Upload Lambda Function Code to S3
-      - name: Upload Lambda Function Code
-        run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          LAMBDA_ZIP_FILE="build/lambda_function.zip"
-
-          # Upload the Lambda function zip file to the S3 bucket
-          echo "Uploading Lambda function code to S3..."
-          aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
-
-      # Step 8: Verify Deployment
+      # Step 9: Verify Deployment
       - name: Verify Deployment
         run: |
           echo "Verifying deployment..."
@@ -85,16 +100,12 @@ jobs:
 
       # Cleanup Step: Delete all AWS resources if the workflow fails
       - name: Cleanup AWS Resources
-        if: failure()  # Run this step only if the workflow fails
+        if: failure()
         run: |
           echo "Cleaning up AWS resources..."
-
-          # Delete the CloudFormation stack
           STACK_NAME="textract-stack"
           echo "Deleting CloudFormation stack $STACK_NAME..."
           aws cloudformation delete-stack --stack-name $STACK_NAME
-
-          # Wait for the stack to be deleted
           echo "Waiting for CloudFormation stack to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
           echo "CloudFormation stack deleted successfully."

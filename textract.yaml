@@ -5,16 +5,12 @@ Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${LambdaCodeBucketName}-${AWS::StackName}-${AWS::Region}"
+      BucketName: !Sub "${LambdaCodeBucketName}-${AWS::AccountId}-${AWS::Region}"
 
   TextractUploadBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${TextractUploadBucketName}-${AWS::StackName}-${AWS::Region}"
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: "s3:ObjectCreated:Put"
-            Function: !GetAtt TextractFunction.Arn
+      BucketName: !Sub "${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}"
 
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
@@ -50,8 +46,15 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                  - dynamodb:*
-                  - textract:*
+                Resource: !Sub "arn:aws:s3:::${LambdaCodeBucketName}-${AWS::AccountId}-${AWS::Region}/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt DynamoDBTable.Arn
+              - Effect: Allow
+                Action:
+                  - textract:AnalyzeDocument
                 Resource: "*"
 
   TextractFunction:
@@ -64,7 +67,15 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
         S3Key: lambda_function.zip
-      Timeout: 301
+      Timeout: 300
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TextractFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt TextractUploadBucket.Arn
 
 Parameters:
   LambdaCodeBucketName:
