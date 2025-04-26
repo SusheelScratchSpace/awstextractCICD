@@ -47,8 +47,9 @@ jobs:
       # Step 3: Create S3 Buckets
       - name: Create S3 Buckets
         run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
-          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}"
+          # Generate unique bucket names
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
 
           # Create Lambda code bucket
           if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
