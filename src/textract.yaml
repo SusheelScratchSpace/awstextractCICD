@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Textract Workflow Resources
+
+Resources:
+  LambdaCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref LambdaCodeBucketName
+
+  TextractUploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref TextractUploadBucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:Put"
+            Function: !GetAtt TextractFunction.Arn
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      AttributeDefinitions:
+        - AttributeName: DocumentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: DocumentId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  TextractLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: TextractLambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TextractPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - dynamodb:*
+                  - textract:*
+                Resource: "*"
+
+  TextractFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Runtime: python3.8
+      Role: !GetAtt TextractLambdaExecutionRole.Arn
+      Handler: lambda_function.lambda_handler
+      Code:
+        S3Bucket: !Ref LambdaCodeBucketName
+        S3Key: lambda_function.zip
+      Timeout: 300
+
+Parameters:
+  LambdaCodeBucketName:
+    Type: String
+  TextractUploadBucketName:
+    Type: String
+  DynamoDBTableName:
+    Type: String
+  LambdaFunctionName:
+    Type: String

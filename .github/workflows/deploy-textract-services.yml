@@ -7,8 +7,8 @@ on:
   workflow_dispatch:  # Allow manual triggering for delete services
 
 jobs:
-  build:
-    name: Build Resources
+  deploy:
+    name: Deploy AWS Resources
     runs-on: ubuntu-latest
 
     steps:
@@ -24,42 +24,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 2.1: Install AWS CLI v2 (if not already installed)
-      - name: Install AWS CLI v2
+      # Step 3: Upload Lambda Function Code to S3
+      - name: Upload Lambda Function Code
         run: |
-          if ! command -v aws &> /dev/null; then
-            echo "AWS CLI not found. Installing..."
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-          else
-            echo "AWS CLI is already installed."
-          fi
-
-      # Step 2.2: Install boto3 (if not already installed)
-      - name: Install boto3
-        run: |
-          if ! python3 -c "import boto3" &> /dev/null; then
-            echo "boto3 not found. Installing..."
-            python3 -m pip install boto3
-          else
-            echo "boto3 is already installed."
-          fi
-
-  deploy:
-    name: Deploy Resources
-    runs-on: ubuntu-latest
-    needs: build  # Ensure the build job completes before deploying
-
-    steps:
-      # Step 1: Create S3 Buckets
-      - name: Create S3 Buckets
-        run: |
-          # Generate unique bucket names
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_ZIP_FILE="lambda_function.zip"
 
-          # Create Lambda code bucket
+          # Check if the S3 bucket exists
           if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
             echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
           else
@@ -74,227 +45,55 @@ jobs:
             fi
           fi
 
-          # Create Textract upload bucket
-          if aws s3api head-bucket --bucket $TEXTRACT_UPLOAD_BUCKET > /dev/null 2>&1; then
-            echo "Bucket $TEXTRACT_UPLOAD_BUCKET already exists. Skipping creation."
+          # Upload the Lambda function zip file to the S3 bucket
+          echo "Uploading Lambda function code to S3..."
+          aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
+
+      # Step 4: Upload CloudFormation Template to S3
+      - name: Upload CloudFormation Template
+        run: |
+          TEMPLATE_FILE="textract.yaml"
+          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+
+          # Check if the S3 bucket exists
+          if aws s3api head-bucket --bucket $TEMPLATE_BUCKET > /dev/null 2>&1; then
+            echo "Bucket $TEMPLATE_BUCKET already exists. Skipping creation."
           else
-            echo "Creating bucket $TEXTRACT_UPLOAD_BUCKET..."
+            echo "Creating bucket $TEMPLATE_BUCKET..."
             if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket $TEXTRACT_UPLOAD_BUCKET
+              aws s3api create-bucket --bucket $TEMPLATE_BUCKET
             else
               aws s3api create-bucket \
-                --bucket $TEXTRACT_UPLOAD_BUCKET \
+                --bucket $TEMPLATE_BUCKET \
                 --region ${{ secrets.AWS_REGION }} \
                 --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
             fi
           fi
 
-          # Attach bucket policy to Lambda code bucket
-          echo '{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/TextractLambdaExecutionRole"
-                },
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::'$LAMBDA_CODE_BUCKET'/*"
-              }
-            ]
-          }' > lambda-code-bucket-policy.json
-          aws s3api put-bucket-policy \
-            --bucket $LAMBDA_CODE_BUCKET \
-            --policy file://lambda-code-bucket-policy.json
+          # Upload the CloudFormation template to the S3 bucket
+          echo "Uploading CloudFormation template to S3..."
+          aws s3 cp $TEMPLATE_FILE s3://$TEMPLATE_BUCKET/
 
-          # Attach bucket policy to Textract upload bucket
-          echo '{
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "Service": "lambda.amazonaws.com"
-                },
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::'$TEXTRACT_UPLOAD_BUCKET'/*"
-              }
-            ]
-          }' > textract-upload-bucket-policy.json
-          aws s3api put-bucket-policy \
-            --bucket $TEXTRACT_UPLOAD_BUCKET \
-            --policy file://textract-upload-bucket-policy.json
-
-      # Step 2: Create DynamoDB Table
-      - name: Create DynamoDB Table
+      # Step 5: Deploy CloudFormation Stack
+      - name: Deploy CloudFormation Stack
         run: |
-          if aws dynamodb describe-table --table-name TextractData > /dev/null 2>&1; then
-            echo "DynamoDB table TextractData already exists. Skipping creation."
-          else
-            echo "Creating DynamoDB table TextractData..."
-            aws dynamodb create-table \
-              --table-name TextractData \
-              --attribute-definitions AttributeName=DocumentId,AttributeType=S \
-              --key-schema AttributeName=DocumentId,KeyType=HASH \
-              --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-          fi
+          STACK_NAME="textract-stack"
+          TEMPLATE_BUCKET="cloudformation-templates-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          TEMPLATE_FILE="textract.yaml"
 
-      # Step 3: Create IAM Role
-      - name: Create IAM Role
+          # Deploy the CloudFormation stack
+          aws cloudformation deploy \
+            --stack-name $STACK_NAME \
+            --template-file $TEMPLATE_FILE \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              LambdaCodeBucketName="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
+              TextractUploadBucketName="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
+              DynamoDBTableName="TextractData" \
+              LambdaFunctionName="TextractFunction"
+
+      # Step 6: Verify Deployment
+      - name: Verify Deployment
         run: |
-          if aws iam get-role --role-name TextractLambdaExecutionRole > /dev/null 2>&1; then
-            echo "IAM role TextractLambdaExecutionRole already exists. Skipping creation."
-          else
-            echo "Creating IAM role TextractLambdaExecutionRole..."
-            echo '{
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Principal": {
-                    "Service": "lambda.amazonaws.com"
-                  },
-                  "Action": "sts:AssumeRole"
-                }
-              ]
-            }' > assume-role-policy.json
-            aws iam create-role \
-              --role-name TextractLambdaExecutionRole \
-              --assume-role-policy-document file://assume-role-policy.json
-            echo '{
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": [
-                    "textract:*",
-                    "dynamodb:*",
-                    "s3:GetObject",
-                    "s3:PutObject"
-                  ],
-                  "Resource": [
-                    "arn:aws:s3:::python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}/*",
-                    "arn:aws:s3:::upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}/*",
-                    "arn:aws:dynamodb:::table/TextractData"
-                  ]
-                }
-              ]
-            }' > policy.json
-            aws iam put-role-policy \
-              --role-name TextractLambdaExecutionRole \
-              --policy-name TextractAndDynamoDBPolicy \
-              --policy-document file://policy.json
-            echo "Waiting for IAM role to propagate..."
-            sleep 10
-          fi
-
-      # Step 4: Deploy or Update Lambda Function
-      - name: Deploy or Update Lambda Function
-        run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-
-          # Zip the Lambda function code
-          zip lambda_function.zip src/lambda_function.py
-          
-          # Upload the zipped file to the Lambda code bucket
-          aws s3 cp lambda_function.zip s3://$LAMBDA_CODE_BUCKET/
-          
-          # Get the IAM Role ARN
-          ROLE_ARN=$(aws iam get-role --role-name TextractLambdaExecutionRole --query 'Role.Arn' --output text)
-          
-          # Check if the Lambda function exists
-          if aws lambda get-function --function-name TextractFunction > /dev/null 2>&1; then
-            echo "Lambda function exists. Updating code..."
-            aws lambda update-function-code \
-              --function-name TextractFunction \
-              --s3-bucket $LAMBDA_CODE_BUCKET \
-              --s3-key lambda_function.zip
-          else
-            echo "Lambda function does not exist. Creating function..."
-            aws lambda create-function \
-              --function-name TextractFunction \
-              --runtime python3.8 \
-              --role $ROLE_ARN \
-              --handler lambda_function.lambda_handler \
-              --code S3Bucket=$LAMBDA_CODE_BUCKET,S3Key=lambda_function.zip \
-              --timeout 300
-          fi
-
-      # Step 5: Configure S3 Bucket Notification
-      - name: Configure S3 Bucket Notification
-        run: |
-          TEXTRACT_UPLOAD_BUCKET="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
-          LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
-          aws lambda add-permission \
-            --function-name TextractFunction \
-            --statement-id s3invoke \
-            --action lambda:InvokeFunction \
-            --principal s3.amazonaws.com \
-            --source-arn arn:aws:s3:::$TEXTRACT_UPLOAD_BUCKET || true
-          echo '{
-            "LambdaFunctionConfigurations": [
-              {
-                "LambdaFunctionArn": "'$LAMBDA_ARN'",
-                "Events": ["s3:ObjectCreated:Put"]
-              }
-            ]
-          }' > notification.json
-          aws s3api put-bucket-notification-configuration \
-            --bucket $TEXTRACT_UPLOAD_BUCKET \
-            --notification-configuration file://notification.json
-
-  delete:
-    name: Delete Resources
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' }}  # Only run when manually triggered
-
-    steps:
-      - name: Cleanup AWS Resources
-        run: |
-          echo "Cleaning up AWS resources..."
-
-          # Delete the Lambda function
-          if aws lambda get-function --function-name TextractFunction > /dev/null 2>&1; then
-            echo "Deleting Lambda function TextractFunction..."
-            aws lambda delete-function --function-name TextractFunction
-          else
-            echo "Lambda function TextractFunction does not exist. Skipping."
-          fi
-
-          # Delete the DynamoDB table
-          if aws dynamodb describe-table --table-name TextractData > /dev/null 2>&1; then
-            echo "Deleting DynamoDB table TextractData..."
-            aws dynamodb delete-table --table-name TextractData
-          else
-            echo "DynamoDB table TextractData does not exist. Skipping."
-          fi
-
-          # Delete the S3 bucket for Textract uploads and its contents
-          if aws s3api head-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
-            aws s3 rm s3://upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} --recursive
-            echo "Deleting S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
-            aws s3api delete-bucket --bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}
-          else
-            echo "S3 bucket upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} does not exist. Skipping."
-          fi
-
-          # Delete the S3 bucket for Lambda code and its contents
-          if aws s3api head-bucket --bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
-            echo "Deleting all objects in S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
-            aws s3 rm s3://python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} --recursive
-            echo "Deleting S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}..."
-            aws s3api delete-bucket --bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}
-          else
-            echo "S3 bucket python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }} does not exist. Skipping."
-          fi
-
-          # Delete the IAM role
-          if aws iam get-role --role-name TextractLambdaExecutionRole > /dev/null 2>&1; then
-            echo "Detaching policies from IAM role TextractLambdaExecutionRole..."
-            aws iam delete-role-policy --role-name TextractLambdaExecutionRole --policy-name TextractAndDynamoDBPolicy
-            echo "Deleting IAM role TextractLambdaExecutionRole..."
-            aws iam delete-role --role-name TextractLambdaExecutionRole
-          else
-            echo "IAM role TextractLambdaExecutionRole does not exist. Skipping."
-          fi
+          echo "Verifying deployment..."
+          aws cloudformation describe-stacks --stack-name textract-stack
