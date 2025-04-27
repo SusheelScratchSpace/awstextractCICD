@@ -38,7 +38,8 @@ jobs:
           aws cloudformation deploy \
             --stack-name textract-stack \
             --template-file textract.yaml \
-            --capabilities CAPABILITY_NAMED_IAM
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides LambdaCodeBucketName=textract-lambda-code-bucket
 
       # Step 5: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack
