@@ -6,13 +6,13 @@ Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${LambdaCodeBucketName}-${AWS::AccountId}-${AWS::Region}"
+      BucketName: textract-lambda-code-bucket  # Static name for the Lambda code bucket
 
   # S3 Bucket for Uploads (Triggers Lambda)
   TextractUploadBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}"
+      BucketName: textract-upload-bucket  # Static name for the upload bucket
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:*"
@@ -22,7 +22,7 @@ Resources:
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref DynamoDBTableName
+      TableName: TextractDataTable  # Static name for the DynamoDB table
       AttributeDefinitions:
         - AttributeName: DocumentId
           AttributeType: S
@@ -37,17 +37,17 @@ Resources:
   TextractFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Ref LambdaFunctionName
+      FunctionName: TextractFunction  # Static name for the Lambda function
       Runtime: python3.8
       Role: !ImportValue TextractLambdaExecutionRoleArn
       Handler: lambda_function.lambda_handler
       Code:
-        S3Bucket: !Ref LambdaCodeBucketName
+        S3Bucket: textract-lambda-code-bucket  # Static name for the Lambda code bucket
         S3Key: lambda_function.zip
       Timeout: 300
       Environment:
         Variables:
-          DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+          DYNAMODB_TABLE_NAME: TextractDataTable  # Static name for the DynamoDB table
 
   # Permission for S3 to Invoke Lambda
   LambdaInvokePermission:
@@ -57,17 +57,3 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !GetAtt TextractUploadBucket.Arn
-
-Parameters:
-  LambdaCodeBucketName:
-    Type: String
-    Description: Name of the S3 bucket where the Lambda function code is stored
-  TextractUploadBucketName:
-    Type: String
-    Description: Name of the S3 bucket where files are uploaded for processing
-  DynamoDBTableName:
-    Type: String
-    Description: Name of the DynamoDB table for storing extracted data
-  LambdaFunctionName:
-    Type: String
-    Description: Name of the Lambda function

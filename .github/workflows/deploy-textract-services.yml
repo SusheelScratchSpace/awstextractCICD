@@ -27,7 +27,7 @@ jobs:
       # Step 3: Create S3 Bucket for Lambda Code
       - name: Create S3 Bucket for Lambda Code
         run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_CODE_BUCKET="textract-lambda-code-bucket"
           if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
             echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
           else
@@ -59,7 +59,7 @@ jobs:
       # Step 6: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code
         run: |
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_CODE_BUCKET="textract-lambda-code-bucket"
           LAMBDA_ZIP_FILE="build/lambda_function.zip"
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
@@ -70,10 +70,7 @@ jobs:
           aws cloudformation deploy \
             --stack-name textract-iam-roles-stack \
             --template-file iam-roles.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              TextractUploadBucketName="upload-textract-bucket" \
-              DynamoDBTableName="TextractData"
+            --capabilities CAPABILITY_NAMED_IAM
 
       # Step 8: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
@@ -81,12 +78,7 @@ jobs:
           aws cloudformation deploy \
             --stack-name textract-stack \
             --template-file textract.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              LambdaCodeBucketName="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
-              TextractUploadBucketName="upload-textract-bucket" \
-              DynamoDBTableName="TextractData" \
-              LambdaFunctionName="TextractFunction"
+            --capabilities CAPABILITY_NAMED_IAM
 
       # Cleanup Step: Delete all AWS resources if the workflow fails
       - name: Cleanup AWS Resources
@@ -109,7 +101,7 @@ jobs:
           aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
 
           # Delete the Lambda code S3 bucket
-          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          LAMBDA_CODE_BUCKET="textract-lambda-code-bucket"
           echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
           aws s3 rb s3://$LAMBDA_CODE_BUCKET --force || echo "Bucket $LAMBDA_CODE_BUCKET already deleted."
 

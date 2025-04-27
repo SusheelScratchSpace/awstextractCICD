@@ -6,7 +6,7 @@ Resources:
   TextractLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: TextractLambdaExecutionRole
+      RoleName: TextractLambdaExecutionRole  # Static name for the IAM role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -22,11 +22,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}/*"
+                Resource: "arn:aws:s3:::textract-upload-bucket/*"  # Static S3 bucket name
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
-                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}"
+                Resource: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/TextractDataTable"  # Static DynamoDB table name
               - Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
@@ -39,12 +39,7 @@ Resources:
                 Resource: "arn:aws:logs:*:*:*"
 
 Parameters:
-  TextractUploadBucketName:
-    Type: String
-    Description: Name of the S3 bucket where files are uploaded for processing
-  DynamoDBTableName:
-    Type: String
-    Description: Name of the DynamoDB table for storing extracted data
+  # Removed dynamic parameters for bucket and table names since we're using static names
 
 Outputs:
   TextractLambdaExecutionRoleArn:
