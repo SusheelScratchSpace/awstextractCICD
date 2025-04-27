@@ -24,21 +24,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 3: Verify Lambda Function Code Exists
-      - name: Verify Lambda Function Code
-        run: |
-          if [ ! -f src/lambda_function.py ]; then
-            echo "Error: Lambda function code (src/lambda_function.py) is missing."
-            exit 1
-          fi
-
-      # Step 4: Zip Lambda Function Code
-      - name: Zip Lambda Function Code
-        run: |
-          mkdir -p build
-          zip -j build/lambda_function.zip src/lambda_function.py
-
-      # Step 5: Create S3 Bucket for Lambda Code
+      # Step 3: Create S3 Bucket for Lambda Code
       - name: Create S3 Bucket for Lambda Code
         run: |
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
@@ -56,6 +42,20 @@ jobs:
             fi
           fi
 
+      # Step 4: Verify Lambda Function Code Exists
+      - name: Verify Lambda Function Code
+        run: |
+          if [ ! -f src/lambda_function.py ]; then
+            echo "Error: Lambda function code (src/lambda_function.py) is missing."
+            exit 1
+          fi
+
+      # Step 5: Zip Lambda Function Code
+      - name: Zip Lambda Function Code
+        run: |
+          mkdir -p build
+          zip -j build/lambda_function.zip src/lambda_function.py
+
       # Step 6: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code
         run: |
@@ -64,19 +64,8 @@ jobs:
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
 
-      # Step 7: Deploy IAM Roles Stack
-      - name: Deploy IAM Roles Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name textract-iam-roles-stack \
-            --template-file iam-roles.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              TextractUploadBucketName="upload-textract-bucket" \
-              DynamoDBTableName="TextractData"
-
-      # Step 8: Deploy Textract Stack
-      - name: Deploy Textract Stack
+      # Step 7: Deploy CloudFormation Stack
+      - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
             --stack-name textract-stack \
@@ -94,18 +83,16 @@ jobs:
         run: |
           echo "Cleaning up AWS resources..."
 
-          # Delete the Textract stack
+          # Delete the CloudFormation stack
           STACK_NAME="textract-stack"
           echo "Deleting CloudFormation stack $STACK_NAME..."
           aws cloudformation delete-stack --stack-name $STACK_NAME
           echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
 
-          # Delete the IAM roles stack
-          IAM_STACK_NAME="textract-iam-roles-stack"
-          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
-          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
-          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
-          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
+          # Delete the Lambda code S3 bucket
+          LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
+          echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
+          aws s3 rb s3://$LAMBDA_CODE_BUCKET --force || echo "Bucket $LAMBDA_CODE_BUCKET already deleted."
 
           echo "Cleanup completed."
