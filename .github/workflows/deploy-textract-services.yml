@@ -24,32 +24,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 3: Pre-cleanup
-      - name: Pre-cleanup
+      # Step 3: Deploy CloudFormation Stack
+      - name: Deploy CloudFormation Stack
         run: |
-          echo "Cleaning up existing resources..."
-          aws cloudformation delete-stack --stack-name textract-stack || echo "Stack already deleted."
-          aws cloudformation delete-stack --stack-name textract-iam-roles-stack || echo "Stack already deleted."
-          aws s3 rb s3://textract-lambda-code-bucket --force || echo "Bucket already deleted."
+          aws cloudformation deploy \
+            --stack-name textract-stack \
+            --template-file textract.yaml \
+            --capabilities CAPABILITY_NAMED_IAM
 
-      # Step 4: Create S3 Bucket for Lambda Code
-      - name: Create S3 Bucket for Lambda Code
+      # Step 4: Wait for CloudFormation Stack to Complete
+      - name: Wait for CloudFormation Stack
         run: |
-          export LAMBDA_CODE_BUCKET="textract-lambda-code-bucket-${{ github.run_id }}"
-          echo "LAMBDA_CODE_BUCKET=$LAMBDA_CODE_BUCKET" >> $GITHUB_ENV
-          if aws s3api head-bucket --bucket $LAMBDA_CODE_BUCKET > /dev/null 2>&1; then
-            echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
-          else
-            echo "Creating bucket $LAMBDA_CODE_BUCKET..."
-            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
-            else
-              aws s3api create-bucket \
-                --bucket $LAMBDA_CODE_BUCKET \
-                --region ${{ secrets.AWS_REGION }} \
-                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
-            fi
-          fi
+          echo "Waiting for CloudFormation stack to complete..."
+          aws cloudformation wait stack-create-complete --stack-name textract-stack
+          echo "CloudFormation stack creation completed."
 
       # Step 5: Verify Lambda Function Code Exists
       - name: Verify Lambda Function Code
@@ -65,29 +53,16 @@ jobs:
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 7: Upload Lambda Function Code to S3
-      - name: Upload Lambda Function Code
+      # Step 7: Upload Lambda Function Code to Lambda
+      - name: Upload Lambda Function Code to Lambda
         run: |
-          aws s3 cp build/lambda_function.zip s3://$LAMBDA_CODE_BUCKET/
+          echo "Uploading Lambda function code to Lambda..."
+          aws lambda update-function-code \
+            --function-name TextractFunction \
+            --s3-bucket textract-lambda-code-bucket \
+            --s3-key lambda_function.zip
 
-      # Step 8: Deploy IAM Roles Stack
-      - name: Deploy IAM Roles Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name textract-iam-roles-stack \
-            --template-file iam-roles.yaml \
-            --capabilities CAPABILITY_NAMED_IAM
-
-      # Step 9: Deploy CloudFormation Stack
-      - name: Deploy CloudFormation Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name textract-stack \
-            --template-file textract.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides LambdaCodeBucketName=$LAMBDA_CODE_BUCKET
-
-      # Step 10: Cleanup Step (if workflow fails)
+      # Step 8: Cleanup Step (if workflow fails)
       - name: Cleanup AWS Resources
         if: failure()
         run: |
@@ -99,17 +74,5 @@ jobs:
           aws cloudformation delete-stack --stack-name $STACK_NAME
           echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
-
-          # Delete the IAM roles stack
-          IAM_STACK_NAME="textract-iam-roles-stack"
-          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
-          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
-          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
-          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
-
-          # Delete the Lambda code S3 bucket
-          echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
-          aws s3 rm s3://$LAMBDA_CODE_BUCKET --recursive || echo "Bucket already empty."
-          aws s3 rb s3://$LAMBDA_CODE_BUCKET --force || echo "Bucket already deleted."
 
           echo "Cleanup completed."
