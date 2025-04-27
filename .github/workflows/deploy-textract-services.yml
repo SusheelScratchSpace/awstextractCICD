@@ -64,7 +64,18 @@ jobs:
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
 
-      # Step 7: Deploy CloudFormation Stack
+      # Step 7: Deploy IAM Roles Stack
+      - name: Deploy IAM Roles Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name textract-iam-roles-stack \
+            --template-file iam-roles.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TextractUploadBucketName="upload-textract-bucket" \
+              DynamoDBTableName="TextractData"
+
+      # Step 8: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
@@ -89,6 +100,13 @@ jobs:
           aws cloudformation delete-stack --stack-name $STACK_NAME
           echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
+
+          # Delete the IAM roles stack
+          IAM_STACK_NAME="textract-iam-roles-stack"
+          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
+          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
 
           # Delete the Lambda code S3 bucket
           LAMBDA_CODE_BUCKET="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}"
