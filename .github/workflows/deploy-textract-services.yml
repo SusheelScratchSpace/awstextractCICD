@@ -40,10 +40,14 @@ jobs:
             echo "Bucket $LAMBDA_CODE_BUCKET already exists. Skipping creation."
           else
             echo "Creating bucket $LAMBDA_CODE_BUCKET..."
-            aws s3api create-bucket \
-              --bucket $LAMBDA_CODE_BUCKET \
-              --region ${{ secrets.AWS_REGION }} \
-              --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            if [ "${{ secrets.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket $LAMBDA_CODE_BUCKET
+            else
+              aws s3api create-bucket \
+                --bucket $LAMBDA_CODE_BUCKET \
+                --region ${{ secrets.AWS_REGION }} \
+                --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            fi
           fi
 
       # Step 5: Verify Lambda Function Code Exists
@@ -83,3 +87,31 @@ jobs:
             --template-file textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides LambdaCodeBucketName=$LAMBDA_CODE_BUCKET
+
+      # Step 10: Cleanup Step (if workflow fails)
+      - name: Cleanup AWS Resources
+        if: failure()
+        run: |
+          echo "Cleaning up AWS resources..."
+
+          # Delete the CloudFormation stack
+          STACK_NAME="textract-stack"
+          echo "Deleting CloudFormation stack $STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $STACK_NAME
+          echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
+
+          # Delete the IAM roles stack
+          IAM_STACK_NAME="textract-iam-roles-stack"
+          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
+          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
+
+          # Delete the Lambda code S3 bucket
+          LAMBDA_CODE_BUCKET="textract-lambda-code-bucket-${{ github.run_id }}"
+          echo "Deleting S3 bucket $LAMBDA_CODE_BUCKET..."
+          aws s3 rm s3://$LAMBDA_CODE_BUCKET --recursive || echo "Bucket already empty."
+          aws s3 rb s3://$LAMBDA_CODE_BUCKET --force || echo "Bucket already deleted."
+
+          echo "Cleanup completed."
