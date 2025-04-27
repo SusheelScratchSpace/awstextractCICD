@@ -11,6 +11,9 @@ Resources:
   # S3 Bucket for Uploads (Triggers Lambda)
   TextractUploadBucket:
     Type: AWS::S3::Bucket
+    DependsOn:
+      - TextractFunction
+      - LambdaInvokePermission
     Properties:
       BucketName: !Sub "${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}"
       NotificationConfiguration:
