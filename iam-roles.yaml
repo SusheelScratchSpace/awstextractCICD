@@ -19,24 +19,31 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # Allow Lambda to read from the S3 upload bucket
               - Effect: Allow
                 Action:
                   - s3:GetObject
                 Resource: "arn:aws:s3:::textract-upload-bucket/*"
+
+              # Allow Lambda to write to the DynamoDB table
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
                 Resource: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/TextractDataTable"
+
+              # Allow Lambda to use Textract
               - Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
                 Resource: "*"
+
+              # Allow Lambda to write logs to CloudWatch
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: "arn:aws:logs:*:*:*"
+                Resource: "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
 
 Outputs:
   TextractLambdaExecutionRoleArn:
