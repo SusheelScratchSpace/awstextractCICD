@@ -19,22 +19,18 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Allow Lambda to read from the upload bucket
               - Effect: Allow
                 Action:
                   - s3:GetObject
                 Resource: !Sub "arn:aws:s3:::${TextractUploadBucketName}-${AWS::AccountId}-${AWS::Region}/*"
-              # Allow Lambda to write to the DynamoDB table
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
                 Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}"
-              # Allow Lambda to call Textract
               - Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
                 Resource: "*"
-              # Allow Lambda to write logs to CloudWatch
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -49,3 +45,10 @@ Parameters:
   DynamoDBTableName:
     Type: String
     Description: Name of the DynamoDB table for storing extracted data
+
+Outputs:
+  TextractLambdaExecutionRoleArn:
+    Description: ARN of the Lambda execution role
+    Value: !GetAtt TextractLambdaExecutionRole.Arn
+    Export:
+      Name: TextractLambdaExecutionRoleArn
