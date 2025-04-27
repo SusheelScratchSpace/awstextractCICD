@@ -24,7 +24,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 3: Deploy CloudFormation Stack
+      # Step 3: Deploy IAM Roles Stack
+      - name: Deploy IAM Roles Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name textract-iam-roles-stack \
+            --template-file iam-roles.yaml \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      # Step 4: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
@@ -32,14 +40,14 @@ jobs:
             --template-file textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM
 
-      # Step 4: Wait for CloudFormation Stack to Complete
+      # Step 5: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack
         run: |
           echo "Waiting for CloudFormation stack to complete..."
           aws cloudformation wait stack-create-complete --stack-name textract-stack
           echo "CloudFormation stack creation completed."
 
-      # Step 5: Verify Lambda Function Code Exists
+      # Step 6: Verify Lambda Function Code Exists
       - name: Verify Lambda Function Code
         run: |
           if [ ! -f src/lambda_function.py ]; then
@@ -47,13 +55,13 @@ jobs:
             exit 1
           fi
 
-      # Step 6: Zip Lambda Function Code
+      # Step 7: Zip Lambda Function Code
       - name: Zip Lambda Function Code
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 7: Upload Lambda Function Code to Lambda
+      # Step 8: Upload Lambda Function Code to Lambda
       - name: Upload Lambda Function Code to Lambda
         run: |
           echo "Uploading Lambda function code to Lambda..."
@@ -62,7 +70,7 @@ jobs:
             --s3-bucket textract-lambda-code-bucket \
             --s3-key lambda_function.zip
 
-      # Step 8: Cleanup Step (if workflow fails)
+      # Step 9: Cleanup Step (if workflow fails)
       - name: Cleanup AWS Resources
         if: failure()
         run: |
@@ -74,5 +82,12 @@ jobs:
           aws cloudformation delete-stack --stack-name $STACK_NAME
           echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
           aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
+
+          # Delete the IAM roles stack
+          IAM_STACK_NAME="textract-iam-roles-stack"
+          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
+          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
 
           echo "Cleanup completed."
