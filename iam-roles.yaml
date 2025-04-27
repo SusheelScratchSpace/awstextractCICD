@@ -22,11 +22,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: "arn:aws:s3:::textract-upload-bucket/*"  # Static S3 bucket name
+                Resource: "arn:aws:s3:::textract-upload-bucket/*"
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
-                Resource: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/TextractDataTable"  # Static DynamoDB table name
+                Resource: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/TextractDataTable"
               - Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
@@ -37,9 +37,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "arn:aws:logs:*:*:*"
-
-Parameters:
-  # Removed dynamic parameters for bucket and table names since we're using static names
 
 Outputs:
   TextractLambdaExecutionRoleArn:
