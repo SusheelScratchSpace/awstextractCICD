@@ -32,7 +32,7 @@ jobs:
             exit 1
           fi
 
-      # Step 4: Zip the Lambda Function Code
+      # Step 4: Zip Lambda Function Code
       - name: Zip Lambda Function Code
         run: |
           mkdir -p build
@@ -64,48 +64,48 @@ jobs:
           echo "Uploading Lambda function code to S3..."
           aws s3 cp $LAMBDA_ZIP_FILE s3://$LAMBDA_CODE_BUCKET/
 
-      # Step 7: Deploy CloudFormation Stack
-      - name: Deploy CloudFormation Stack
+      # Step 7: Deploy IAM Roles Stack
+      - name: Deploy IAM Roles Stack
         run: |
-          STACK_NAME="textract-stack"
-          TEMPLATE_FILE="textract.yaml"
-          echo "Deploying CloudFormation stack $STACK_NAME..."
           aws cloudformation deploy \
-            --stack-name $STACK_NAME \
-            --template-file $TEMPLATE_FILE \
+            --stack-name textract-iam-roles-stack \
+            --template-file iam-roles.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TextractUploadBucketName="upload-textract-bucket" \
+              DynamoDBTableName="TextractData"
+
+      # Step 8: Deploy Textract Stack
+      - name: Deploy Textract Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name textract-stack \
+            --template-file textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               LambdaCodeBucketName="python-code-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
-              TextractUploadBucketName="upload-textract-bucket-${{ secrets.AWS_ACCOUNT_ID }}-${{ secrets.AWS_REGION }}" \
+              TextractUploadBucketName="upload-textract-bucket" \
               DynamoDBTableName="TextractData" \
               LambdaFunctionName="TextractFunction"
-
-      # Step 8: Wait for CloudFormation Stack to Complete
-      - name: Wait for CloudFormation Stack Creation
-        run: |
-          STACK_NAME="textract-stack"
-          echo "Waiting for CloudFormation stack $STACK_NAME to complete..."
-          aws cloudformation wait stack-create-complete --stack-name $STACK_NAME || {
-            echo "Stack creation failed. Fetching stack events..."
-            aws cloudformation describe-stack-events --stack-name $STACK_NAME
-            exit 1
-          }
-          echo "CloudFormation stack $STACK_NAME created successfully."
-
-      # Step 9: Verify Deployment
-      - name: Verify Deployment
-        run: |
-          echo "Verifying deployment..."
-          aws cloudformation describe-stacks --stack-name textract-stack
 
       # Cleanup Step: Delete all AWS resources if the workflow fails
       - name: Cleanup AWS Resources
         if: failure()
         run: |
           echo "Cleaning up AWS resources..."
+
+          # Delete the Textract stack
           STACK_NAME="textract-stack"
           echo "Deleting CloudFormation stack $STACK_NAME..."
           aws cloudformation delete-stack --stack-name $STACK_NAME
-          echo "Waiting for CloudFormation stack to be deleted..."
-          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
-          echo "CloudFormation stack deleted successfully."
+          echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
+
+          # Delete the IAM roles stack
+          IAM_STACK_NAME="textract-iam-roles-stack"
+          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
+          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
+          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
+          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
+
+          echo "Cleanup completed."
