@@ -1,4 +1,4 @@
-name: AWS Textract Workflow
+name: Deploy Textract Services
 
 on:
   push:
@@ -8,29 +8,26 @@ on:
 
 jobs:
   deploy:
-    name: Deploy AWS Resources
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
-      - name: Checkout code
+      # Step 1: Checkout Code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      # Step 2: Configure AWS credentials
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
+      # Step 2: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-east-1
 
-      # Step 3: Deploy IAM Roles Stack
-      - name: Deploy IAM Roles Stack
+      # Step 3: Install AWS CLI
+      - name: Install AWS CLI
         run: |
-          aws cloudformation deploy \
-            --stack-name textract-iam-roles-stack \
-            --template-file iam-roles.yaml \
-            --capabilities CAPABILITY_NAMED_IAM
+          sudo apt-get update
+          sudo apt-get install -y awscli
 
       # Step 4: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
@@ -44,7 +41,11 @@ jobs:
       - name: Wait for CloudFormation Stack
         run: |
           echo "Waiting for CloudFormation stack to complete..."
-          aws cloudformation wait stack-create-complete --stack-name textract-stack
+          if ! aws cloudformation wait stack-create-complete --stack-name textract-stack; then
+            echo "Error: CloudFormation stack creation failed."
+            aws cloudformation describe-stack-events --stack-name textract-stack
+            exit 1
+          fi
           echo "CloudFormation stack creation completed."
 
       # Step 6: Verify Lambda Function Code Exists
@@ -61,33 +62,17 @@ jobs:
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 8: Upload Lambda Function Code to Lambda
-      - name: Upload Lambda Function Code to Lambda
+      # Step 8: Upload Lambda Function Code to S3
+      - name: Upload Lambda Function Code to S3
         run: |
-          echo "Uploading Lambda function code to Lambda..."
-          aws lambda update-function-code \
-            --function-name TextractFunction \
-            --s3-bucket textract-lambda-code-bucket \
-            --s3-key lambda_function.zip
+          aws s3 cp build/lambda_function.zip s3://textract-lambda-code-bucket/lambda_function.zip
 
-      # Step 9: Cleanup Step (if workflow fails)
-      - name: Cleanup AWS Resources
+      # Step 9: Cleanup Resources on Failure
+      - name: Cleanup Resources
         if: failure()
         run: |
-          echo "Cleaning up AWS resources..."
-
-          # Delete the CloudFormation stack
-          STACK_NAME="textract-stack"
-          echo "Deleting CloudFormation stack $STACK_NAME..."
-          aws cloudformation delete-stack --stack-name $STACK_NAME
-          echo "Waiting for CloudFormation stack $STACK_NAME to be deleted..."
-          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME || echo "Stack $STACK_NAME already deleted."
-
-          # Delete the IAM roles stack
-          IAM_STACK_NAME="textract-iam-roles-stack"
-          echo "Deleting CloudFormation stack $IAM_STACK_NAME..."
-          aws cloudformation delete-stack --stack-name $IAM_STACK_NAME
-          echo "Waiting for CloudFormation stack $IAM_STACK_NAME to be deleted..."
-          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK_NAME || echo "Stack $IAM_STACK_NAME already deleted."
-
-          echo "Cleanup completed."
+          echo "Cleaning up resources due to workflow failure..."
+          aws cloudformation delete-stack --stack-name textract-stack
+          echo "Waiting for stack deletion to complete..."
+          aws cloudformation wait stack-delete-complete --stack-name textract-stack
+          echo "Stack deletion completed."
