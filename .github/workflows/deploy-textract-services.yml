@@ -83,7 +83,17 @@ jobs:
           echo "Uploading Lambda function code to S3..."
           aws s3 cp build/lambda_function.zip s3://textract-lambda-code-bucket/lambda_function.zip
 
-      # Step 10: Update Lambda Function Code
+      # Step 10: Verify File Exists in S3
+      - name: Verify File Exists in S3
+        run: |
+          echo "Verifying that the Lambda function code exists in S3..."
+          if ! aws s3 ls s3://textract-lambda-code-bucket/lambda_function.zip; then
+            echo "Error: Lambda function code (lambda_function.zip) does not exist in S3."
+            exit 1
+          fi
+          echo "Lambda function code verified in S3."
+
+      # Step 11: Update Lambda Function Code
       - name: Update Lambda Function Code
         run: |
           echo "Updating Lambda function code..."
@@ -92,7 +102,7 @@ jobs:
             --s3-bucket textract-lambda-code-bucket \
             --s3-key lambda_function.zip
 
-      # Step 11: Cleanup Resources on Failure
+      # Step 12: Cleanup Resources on Failure
       - name: Cleanup Resources
         if: failure()
         run: |
@@ -102,7 +112,7 @@ jobs:
           aws cloudformation wait stack-delete-complete --stack-name textract-stack
           echo "Stack deletion completed."
 
-      # Step 12: Cleanup Local Files
+      # Step 13: Cleanup Local Files
       - name: Cleanup Local Files
         if: always()
         run: |
