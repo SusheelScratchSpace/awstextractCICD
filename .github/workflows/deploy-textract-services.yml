@@ -52,26 +52,26 @@ jobs:
       - name: Check Stack Status
         id: check-stack-status
         run: |
-          if aws cloudformation describe-stacks --stack-name textract-stack 2> /dev/null; then
-            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
-            if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
-              echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
-              aws cloudformation delete-stack --stack-name textract-stack
-              aws cloudformation wait stack-delete-complete --stack-name textract-stack
-              echo "Stack deleted."
-              echo "::set-output name=stack_deleted::true"
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
+          if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
+            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
+            aws cloudformation delete-stack --stack-name textract-stack
+            aws cloudformation wait stack-delete-complete --stack-name textract-stack
+            echo "Stack deleted."
+            echo "stack_deleted=true" >> $GITHUB_ENV
+          else
+            if [ -z "$STACK_STATUS" ]; then
+              echo "Stack does not exist."
+              echo "stack_deleted=true" >> $GITHUB_ENV
             else
               echo "Stack is not in ROLLBACK_COMPLETE state."
-              echo "::set-output name=stack_deleted::false"
+              echo "stack_deleted=false" >> $GITHUB_ENV
             fi
-          else
-            echo "Stack does not exist."
-            echo "::set-output name=stack_deleted::true"
           fi
 
       # Step 7: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
-        if: steps.check-stack-status.outputs.stack_deleted == 'true' || steps.check-stack-status.outputs.stack_deleted == 'false'
+        if: env.stack_deleted == 'true' || env.stack_deleted == 'false'
         run: |
           aws cloudformation deploy \
             --stack-name textract-stack \
