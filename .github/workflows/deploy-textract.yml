@@ -11,10 +11,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      LAMBDA_BUCKET: "textract-lambda-code-bucket-2024"
+      LAMBDA_BUCKET: textract-lambda-code-bucket-2024
     steps:
       - uses: actions/checkout@v3
-
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -48,8 +47,7 @@ jobs:
           aws cloudformation deploy \
             --stack-name textract-stack \
             --template-file templates/textract.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides BucketName=${LAMBDA_BUCKET}
+            --capabilities CAPABILITY_NAMED_IAM
 
       - name: Cleanup
         if: always()

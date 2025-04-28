@@ -2,21 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Textract service infrastructure
 
 Resources:
-  TextractFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: TextractFunction
-      Runtime: python3.8
-      Handler: lambda_function.lambda_handler
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Code:
-        S3Bucket: textract-lambda-code-bucket-2024
-        S3Key: lambda_function.zip
-      Environment:
-        Variables:
-          SOURCE_BUCKET: textract-source-docs-2024
-      Timeout: 300
-
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -39,6 +24,23 @@ Resources:
                 Action:
                   - textract:*
                   - s3:GetObject
+                  - s3:PutBucketNotification
+                  - s3:GetBucketNotification
                 Resource: 
                   - arn:aws:s3:::textract-source-docs-2024/*
-                  - arn:aws:s3:::textract-lambda-code-bucket-2024/*
+                  - arn:aws:s3:::textract-source-docs-2024
+
+  TextractFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: TextractFunction
+      Runtime: python3.8
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: textract-lambda-code-bucket-2024
+        S3Key: lambda_function.zip
+      Environment:
+        Variables:
+          SOURCE_BUCKET: textract-source-docs-2024
+      Timeout: 300

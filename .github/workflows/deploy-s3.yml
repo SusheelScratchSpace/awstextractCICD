@@ -6,19 +6,22 @@ on:
       bucket_exists:
         description: "Whether buckets already exist"
         value: ${{ jobs.deploy.outputs.bucket_exists }}
+      trigger_updated:
+        description: "Whether trigger was updated"
+        value: ${{ jobs.deploy.outputs.trigger_updated }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     outputs:
       bucket_exists: ${{ steps.check-bucket.outputs.exists }}
+      trigger_updated: ${{ steps.check-trigger.outputs.updated }}
     env:
       LAMBDA_BUCKET: textract-lambda-code-bucket-2024
       SOURCE_BUCKET: textract-source-docs-2024
 
     steps:
       - uses: actions/checkout@v3
-
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -32,7 +35,7 @@ jobs:
           if aws s3api head-bucket --bucket ${LAMBDA_BUCKET} 2>/dev/null && \
              aws s3api head-bucket --bucket ${SOURCE_BUCKET} 2>/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Buckets already exist"
+            echo "Buckets exist, checking trigger..."
           else
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "Creating buckets..."
@@ -40,4 +43,27 @@ jobs:
               --stack-name textract-s3-stack \
               --template-file templates/s3.yaml \
               --capabilities CAPABILITY_NAMED_IAM
+          fi
+
+      - name: Check and Update Trigger
+        id: check-trigger
+        if: steps.check-bucket.outputs.exists == 'true'
+        run: |
+          NOTIFICATION=$(aws s3api get-bucket-notification-configuration --bucket ${SOURCE_BUCKET} 2>/dev/null)
+          if [[ $NOTIFICATION == *"TextractFunction"* ]]; then
+            echo "Trigger exists"
+            echo "updated=false" >> $GITHUB_OUTPUT
+          else
+            echo "Setting up trigger..."
+            LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
+            aws lambda add-permission \
+              --function-name TextractFunction \
+              --statement-id S3Trigger \
+              --action lambda:InvokeFunction \
+              --principal s3.amazonaws.com \
+              --source-arn arn:aws:s3:::${SOURCE_BUCKET} || true
+            aws s3api put-bucket-notification-configuration \
+              --bucket ${SOURCE_BUCKET} \
+              --notification-configuration "{\"LambdaFunctionConfigurations\":[{\"LambdaFunctionArn\":\"${LAMBDA_ARN}\",\"Events\":[\"s3:ObjectCreated:*\"]}]}"
+            echo "updated=true" >> $GITHUB_OUTPUT
           fi
