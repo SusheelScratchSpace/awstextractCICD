@@ -13,12 +13,40 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: textract-source-docs-2024
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: arn:aws:lambda:us-east-1:${AWS::AccountId}:function:TextractFunction
+
+  SourceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SourceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${SourceBucket}/*"
 
 Outputs:
   LambdaCodeBucketName:
     Description: Name of the Lambda code bucket
     Value: !Ref LambdaCodeBucket
-  
+    Export:
+      Name: LambdaCodeBucketName
+
   SourceBucketName:
     Description: Name of the source bucket
     Value: !Ref SourceBucket
+    Export:
+      Name: SourceBucketName
+
+  SourceBucketArn:
+    Description: ARN of the source bucket
+    Value: !GetAtt SourceBucket.Arn
+    Export:
+      Name: SourceBucketArn
