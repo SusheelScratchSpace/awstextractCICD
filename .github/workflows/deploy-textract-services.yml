@@ -27,30 +27,14 @@ jobs:
       - name: Set AWS Account ID
         run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
 
-      # Step 4: Validate CloudFormation Template
-      - name: Validate CloudFormation Template
+      # Step 4: Prepare Lambda Code
+      - name: Prepare Lambda Code
         run: |
-          aws cloudformation validate-template --template-body file://textract.yaml
+          mkdir -p build
+          zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 5: Check Stack Status and Delete if in ROLLBACK_COMPLETE
-      - name: Check Stack Status
-        id: check-stack-status
-        run: |
-          if aws cloudformation describe-stacks --stack-name textract-stack 2>/dev/null; then
-            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text)
-            if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
-              aws cloudformation delete-stack --stack-name textract-stack
-              aws cloudformation wait stack-delete-complete --stack-name textract-stack
-              echo "stack_deleted=true" >> $GITHUB_ENV
-            else
-              echo "stack_deleted=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "stack_deleted=true" >> $GITHUB_ENV
-          fi
-
-      # Step 6: Deploy CloudFormation Stack
-      - name: Deploy CloudFormation Stack
+      # Step 5: Deploy Initial Stack
+      - name: Deploy Initial Stack
         run: |
           aws cloudformation deploy \
             --stack-name textract-stack \
@@ -58,17 +42,36 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides AccountId=$AWS_ACCOUNT_ID
 
-      # Step 7: Prepare Lambda Code
-      - name: Prepare Lambda Code
+      # Step 6: Wait for S3 Bucket
+      - name: Wait for S3 Bucket
         run: |
-          mkdir -p build
-          zip -j build/lambda_function.zip src/lambda_function.py
+          S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
+          MAX_RETRIES=30
+          RETRY_COUNT=0
+          until aws s3api head-bucket --bucket $S3_BUCKET_NAME 2>/dev/null; do
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "Error: S3 bucket creation timeout"
+              exit 1
+            fi
+            echo "Waiting for S3 bucket creation..."
+            sleep 10
+            RETRY_COUNT=$((RETRY_COUNT+1))
+          done
 
-      # Step 8: Upload Lambda Code
+      # Step 7: Upload Lambda Code
       - name: Upload Lambda Code
         run: |
           S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
           aws s3 cp build/lambda_function.zip s3://$S3_BUCKET_NAME/lambda_function.zip
+
+      # Step 8: Verify Lambda Code Upload
+      - name: Verify Lambda Code Upload
+        run: |
+          S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
+          if ! aws s3api head-object --bucket $S3_BUCKET_NAME --key lambda_function.zip; then
+            echo "Error: Lambda code not found in S3"
+            exit 1
+          fi
 
       # Step 9: Update Lambda Function
       - name: Update Lambda Function
@@ -78,7 +81,17 @@ jobs:
             --s3-bucket textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }} \
             --s3-key lambda_function.zip
 
-      # Step 10: Cleanup Local Files
+      # Step 10: Verify Lambda Update
+      - name: Verify Lambda Update
+        run: |
+          aws lambda wait function-updated --function-name TextractFunction
+          FUNCTION_STATE=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.State' --output text)
+          if [ "$FUNCTION_STATE" != "Active" ]; then
+            echo "Error: Lambda function not active"
+            exit 1
+          fi
+
+      # Step 11: Cleanup Local Files
       - name: Cleanup
         if: always()
         run: rm -rf build
