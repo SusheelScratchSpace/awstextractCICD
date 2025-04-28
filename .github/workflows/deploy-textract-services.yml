@@ -48,8 +48,25 @@ jobs:
         run: |
           aws cloudformation validate-template --template-body file://textract.yaml
 
-      # Step 6: Deploy CloudFormation Stack
+      # Step 6: Check Stack Status and Delete if in ROLLBACK_COMPLETE
+      - name: Check Stack Status
+        id: check-stack-status
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
+          if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
+            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
+            aws cloudformation delete-stack --stack-name textract-stack
+            aws cloudformation wait stack-delete-complete --stack-name textract-stack
+            echo "Stack deleted."
+            echo "::set-output name=stack_deleted::true"
+          else
+            echo "Stack is not in ROLLBACK_COMPLETE state."
+            echo "::set-output name=stack_deleted::false"
+          fi
+
+      # Step 7: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
+        if: steps.check-stack-status.outputs.stack_deleted == 'true' || steps.check-stack-status.outputs.stack_deleted == 'false'
         run: |
           aws cloudformation deploy \
             --stack-name textract-stack \
@@ -57,7 +74,7 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides AccountId=$AWS_ACCOUNT_ID
 
-      # Step 7: Wait for CloudFormation Stack to Complete
+      # Step 8: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack to Complete
         run: |
           echo "Waiting for CloudFormation stack to complete..."
@@ -68,7 +85,7 @@ jobs:
           fi
           echo "CloudFormation stack creation completed."
 
-      # Step 8: Verify Lambda Function Code Exists
+      # Step 9: Verify Lambda Function Code Exists
       - name: Verify Lambda Function Code
         run: |
           if [ ! -f src/lambda_function.py ]; then
@@ -76,20 +93,20 @@ jobs:
             exit 1
           fi
 
-      # Step 9: Zip Lambda Function Code
+      # Step 10: Zip Lambda Function Code
       - name: Zip Lambda Function Code
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 10: Upload Lambda Function Code to S3
+      # Step 11: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code to S3
         run: |
           echo "Uploading Lambda function code to S3..."
           S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
           aws s3 cp build/lambda_function.zip s3://$S3_BUCKET_NAME/lambda_function.zip
 
-      # Step 11: Verify File Exists in S3
+      # Step 12: Verify File Exists in S3
       - name: Verify File Exists in S3
         run: |
           echo "Verifying that the Lambda function code exists in S3..."
@@ -100,7 +117,7 @@ jobs:
           fi
           echo "Lambda function code verified in S3."
 
-      # Step 12: Update Lambda Function Code
+      # Step 13: Update Lambda Function Code
       - name: Update Lambda Function Code
         run: |
           echo "Updating Lambda function code..."
@@ -110,7 +127,7 @@ jobs:
             --s3-bucket $S3_BUCKET_NAME \
             --s3-key lambda_function.zip
 
-      # Step 13: Cleanup Resources on Failure
+      # Step 14: Cleanup Resources on Failure
       - name: Cleanup Resources
         if: failure()
         run: |
@@ -120,7 +137,7 @@ jobs:
           aws cloudformation wait stack-delete-complete --stack-name textract-stack
           echo "Stack deletion completed."
 
-      # Step 14: Cleanup Local Files
+      # Step 15: Cleanup Local Files
       - name: Cleanup Local Files
         if: always()
         run: |
