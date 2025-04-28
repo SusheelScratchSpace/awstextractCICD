@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Textract Workflow with IAM Roles and Lambda Function
+Description: "AWS Textract Workflow Infrastructure"
 
 Parameters:
   AccountId:
@@ -7,11 +7,35 @@ Parameters:
     Description: AWS Account ID
 
 Resources:
-  # IAM Role for Lambda Execution
+  # S3 Buckets
+  TextractSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "textract-source-${AWS::AccountId}"
+      
+  TextractLambdaCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "textract-lambda-code-bucket-${AWS::AccountId}"
+
+  # DynamoDB Table
+  TextractDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TextractDataTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: DocumentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: DocumentId
+          KeyType: HASH
+
+  # IAM Role
   TextractLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: TextractLambdaExecutionRole  # Static name for the IAM role
+      RoleName: TextractLambdaExecutionRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -19,96 +43,54 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
         - PolicyName: TextractPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Allow Lambda to write logs to CloudWatch
               - Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "arn:aws:logs:*:*:*"
-
-              # Allow Lambda to read from the S3 upload bucket
-              - Effect: Allow
-                Action:
+                  - textract:*
                   - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::textract-lambda-code-bucket-${AWS::AccountId}/*"
-
-              # Allow Lambda to write to the DynamoDB table
-              - Effect: Allow
-                Action:
+                  - s3:PutObject
                   - dynamodb:PutItem
-                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/TextractDataTable"
-
-              # Allow Lambda to use Textract
-              - Effect: Allow
-                Action:
-                  - textract:AnalyzeDocument
-                Resource: "*"
+                Resource: 
+                  - !Sub "arn:aws:s3:::textract-source-${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::textract-lambda-code-bucket-${AWS::AccountId}/*"
+                  - !GetAtt TextractDataTable.Arn
 
   # Lambda Function
   TextractFunction:
     Type: AWS::Lambda::Function
+    DependsOn: 
+      - TextractLambdaCodeBucket
+      - TextractLambdaExecutionRole
     Properties:
-      FunctionName: TextractFunction  # Static name for the Lambda function
+      FunctionName: TextractFunction
       Runtime: python3.8
-      Role: !GetAtt TextractLambdaExecutionRole.Arn
       Handler: lambda_function.lambda_handler
+      Role: !GetAtt TextractLambdaExecutionRole.Arn
       Code:
         S3Bucket: !Sub "textract-lambda-code-bucket-${AWS::AccountId}"
         S3Key: lambda_function.zip
-      Timeout: 301
       Environment:
         Variables:
-          DYNAMODB_TABLE_NAME: TextractDataTable  # Static name for the DynamoDB table
-
-  # Permission for S3 to Invoke Lambda
-  LambdaInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref TextractFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub "arn:aws:s3:::textract-lambda-code-bucket-${AWS::AccountId}"
-
-  # DynamoDB Table
-  TextractDataTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: TextractDataTable
-      AttributeDefinitions:
-        - AttributeName: DocumentId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: DocumentId
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-
-  # S3 Bucket for Lambda Code
-  TextractLambdaCodeBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "textract-lambda-code-bucket-${AWS::AccountId}"
-
-  # S3 Bucket for Uploads
-  TextractUploadBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "textract-upload-bucket-${AWS::AccountId}"
+          SOURCE_BUCKET: !Ref TextractSourceBucket
+          DYNAMODB_TABLE: !Ref TextractDataTable
+      Timeout: 300
+      MemorySize: 256
 
 Outputs:
-  LambdaFunctionName:
-    Description: Name of the Lambda function
-    Value: !Ref TextractFunction
+  SourceBucketName:
+    Description: Name of the source S3 bucket
+    Value: !Ref TextractSourceBucket
+
+  LambdaFunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt TextractFunction.Arn
 
   DynamoDBTableName:
     Description: Name of the DynamoDB table
     Value: !Ref TextractDataTable
-
-  S3UploadBucketName:
-    Description: Name of the S3 upload bucket
-    Value: !Ref TextractLambdaCodeBucket

@@ -23,55 +23,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Step 3: Install or Update AWS CLI
-      - name: Install or Update AWS CLI
-        run: |
-          if ! aws --version; then
-            echo "AWS CLI not found. Installing..."
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-          else
-            echo "AWS CLI found. Updating..."
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install --update
-          fi
-          aws --version
-
-      # Step 4: Set AWS Account ID as Environment Variable
+      # Step 3: Set AWS Account ID as Environment Variable
       - name: Set AWS Account ID
         run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
 
-      # Step 5: Validate CloudFormation Template
+      # Step 4: Validate CloudFormation Template
       - name: Validate CloudFormation Template
         run: |
           aws cloudformation validate-template --template-body file://textract.yaml
 
-      # Step 6: Check Stack Status and Delete if in ROLLBACK_COMPLETE
+      # Step 5: Check Stack Status and Delete if in ROLLBACK_COMPLETE
       - name: Check Stack Status
         id: check-stack-status
         run: |
-          if aws cloudformation describe-stacks --stack-name textract-stack 2> /dev/null; then
-            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
+          if aws cloudformation describe-stacks --stack-name textract-stack 2>/dev/null; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text)
             if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
-              echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
               aws cloudformation delete-stack --stack-name textract-stack
               aws cloudformation wait stack-delete-complete --stack-name textract-stack
-              echo "Stack deleted."
               echo "stack_deleted=true" >> $GITHUB_ENV
             else
-              echo "Stack is not in ROLLBACK_COMPLETE state."
               echo "stack_deleted=false" >> $GITHUB_ENV
             fi
           else
-            echo "Stack does not exist."
             echo "stack_deleted=true" >> $GITHUB_ENV
           fi
 
-      # Step 7: Deploy CloudFormation Stack
+      # Step 6: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
-        if: env.stack_deleted == 'true' || env.stack_deleted == 'false'
         run: |
           aws cloudformation deploy \
             --stack-name textract-stack \
@@ -79,73 +58,27 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides AccountId=$AWS_ACCOUNT_ID
 
-      # Step 8: Wait for CloudFormation Stack to Complete
-      - name: Wait for CloudFormation Stack to Complete
-        run: |
-          echo "Waiting for CloudFormation stack to complete..."
-          if ! aws cloudformation wait stack-create-complete --stack-name textract-stack; then
-            echo "Error: CloudFormation stack creation failed."
-            aws cloudformation describe-stack-events --stack-name textract-stack
-            exit 1
-          fi
-          echo "CloudFormation stack creation completed."
-
-      # Step 9: Verify Lambda Function Code Exists
-      - name: Verify Lambda Function Code
-        run: |
-          if [ ! -f src/lambda_function.py ]; then
-            echo "Error: Lambda function code (src/lambda_function.py) is missing."
-            exit 1
-          fi
-
-      # Step 10: Zip Lambda Function Code
-      - name: Zip Lambda Function Code
+      # Step 7: Prepare Lambda Code
+      - name: Prepare Lambda Code
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 11: Upload Lambda Function Code to S3
-      - name: Upload Lambda Function Code to S3
+      # Step 8: Upload Lambda Code
+      - name: Upload Lambda Code
         run: |
-          echo "Uploading Lambda function code to S3..."
           S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
           aws s3 cp build/lambda_function.zip s3://$S3_BUCKET_NAME/lambda_function.zip
 
-      # Step 12: Verify File Exists in S3
-      - name: Verify File Exists in S3
+      # Step 9: Update Lambda Function
+      - name: Update Lambda Function
         run: |
-          echo "Verifying that the Lambda function code exists in S3..."
-          S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
-          if ! aws s3 ls s3://$S3_BUCKET_NAME/lambda_function.zip; then
-            echo "Error: Lambda function code (lambda_function.zip) does not exist in S3."
-            exit 1
-          fi
-          echo "Lambda function code verified in S3."
-
-      # Step 13: Update Lambda Function Code
-      - name: Update Lambda Function Code
-        run: |
-          echo "Updating Lambda function code..."
-          S3_BUCKET_NAME="textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }}"
           aws lambda update-function-code \
             --function-name TextractFunction \
-            --s3-bucket $S3_BUCKET_NAME \
+            --s3-bucket textract-lambda-code-bucket-${{ env.AWS_ACCOUNT_ID }} \
             --s3-key lambda_function.zip
 
-      # Step 14: Cleanup Resources on Failure
-      - name: Cleanup Resources
-        if: failure()
-        run: |
-          echo "Cleaning up resources due to workflow failure..."
-          aws cloudformation delete-stack --stack-name textract-stack
-          echo "Waiting for stack deletion to complete..."
-          aws cloudformation wait stack-delete-complete --stack-name textract-stack
-          echo "Stack deletion completed."
-
-      # Step 15: Cleanup Local Files
-      - name: Cleanup Local Files
+      # Step 10: Cleanup Local Files
+      - name: Cleanup
         if: always()
-        run: |
-          echo "Cleaning up local files..."
-          rm -rf build awscliv2.zip
-          echo "Local cleanup completed."
+        run: rm -rf build
