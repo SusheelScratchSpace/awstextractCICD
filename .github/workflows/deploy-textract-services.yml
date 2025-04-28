@@ -32,6 +32,27 @@ jobs:
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
+      
+      - name: Check Stack Status
+        id: check-stack
+        run: |
+          # Handle non-existent stack gracefully
+          if ! aws cloudformation describe-stacks --stack-name textract-stack > /dev/null 2>&1; then
+            echo "Stack does not exist"
+            echo "stack_exists=false" >> $GITHUB_ENV
+            exit 0
+          fi
+            
+          # Check status only if stack exists
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query 'Stacks[0].StackStatus' --output text)
+          echo "stack_status=$STACK_STATUS" >> $GITHUB_ENV
+          echo "stack_exists=true" >> $GITHUB_ENV
+            
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Deleting stack in ROLLBACK_COMPLETE state..."
+            aws cloudformation delete-stack --stack-name textract-stack
+            aws cloudformation wait stack-delete-complete --stack-name textract-stack
+          fi
 
       # Step 5: Deploy Initial Stack
       - name: Deploy Initial Stack
