@@ -52,21 +52,21 @@ jobs:
       - name: Check Stack Status
         id: check-stack-status
         run: |
-          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
-          if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
-            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
-            aws cloudformation delete-stack --stack-name textract-stack
-            aws cloudformation wait stack-delete-complete --stack-name textract-stack
-            echo "Stack deleted."
-            echo "stack_deleted=true" >> $GITHUB_ENV
-          else
-            if [ -z "$STACK_STATUS" ]; then
-              echo "Stack does not exist."
+          if aws cloudformation describe-stacks --stack-name textract-stack 2> /dev/null; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query "Stacks[0].StackStatus" --output text 2> /dev/null)
+            if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
+              echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
+              aws cloudformation delete-stack --stack-name textract-stack
+              aws cloudformation wait stack-delete-complete --stack-name textract-stack
+              echo "Stack deleted."
               echo "stack_deleted=true" >> $GITHUB_ENV
             else
               echo "Stack is not in ROLLBACK_COMPLETE state."
               echo "stack_deleted=false" >> $GITHUB_ENV
             fi
+          else
+            echo "Stack does not exist."
+            echo "stack_deleted=true" >> $GITHUB_ENV
           fi
 
       # Step 7: Deploy CloudFormation Stack
