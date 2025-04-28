@@ -1,18 +1,21 @@
-name: Deploy S3 Infrastructure
+name: S3 Infrastructure Deployment
 
 on:
-  workflow_dispatch:
   workflow_call:
+    outputs:
+      bucket_name:
+        description: "S3 bucket name"
+        value: ${{ jobs.deploy.outputs.bucket_name }}
 
 jobs:
-  deploy-s3:
+  deploy:
     runs-on: ubuntu-latest
     outputs:
-      bucket_name: ${{ steps.get-bucket.outputs.bucket_name }}
+      bucket_name: ${{ steps.set-bucket.outputs.bucket_name }}
 
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -30,8 +33,7 @@ jobs:
             --template-file templates/s3-bucket.yaml \
             --parameter-overrides AccountId=$AWS_ACCOUNT_ID
 
-      - name: Get Bucket Name
-        id: get-bucket
+      - name: Set Bucket Name
+        id: set-bucket
         run: |
-          BUCKET_NAME="textract-lambda-code-bucket-$AWS_ACCOUNT_ID"
-          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "bucket_name=textract-lambda-code-bucket-$AWS_ACCOUNT_ID" >> $GITHUB_OUTPUT

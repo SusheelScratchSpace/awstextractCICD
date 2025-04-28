@@ -1,0 +1,18 @@
+name: Main Deployment Orchestrator
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  s3-infrastructure:
+    uses: ./.github/workflows/deploy-s3.yml
+    secrets: inherit
+
+  textract-service:
+    needs: s3-infrastructure
+    uses: ./.github/workflows/deploy-textract.yml
+    with:
+      bucket_name: ${{ needs.s3-infrastructure.outputs.bucket_name }}
+    secrets: inherit
