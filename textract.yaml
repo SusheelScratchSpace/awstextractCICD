@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: AWS Textract Workflow with IAM Roles and Lambda Function
 
+Parameters:
+  AccountId:
+    Type: String
+    Description: AWS Account ID
+
 Resources:
   # IAM Role for Lambda Execution
   TextractLambdaExecutionRole:
@@ -31,7 +36,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::textract-upload-bucket-${AWS::AccountId}/*"
+                Resource: !Sub "arn:aws:s3:::textract-lambda-code-bucket-${AWS::AccountId}/*"
 
               # Allow Lambda to write to the DynamoDB table
               - Effect: Allow
@@ -68,7 +73,7 @@ Resources:
       FunctionName: !Ref TextractFunction
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !Sub "arn:aws:s3:::textract-upload-bucket-${AWS::AccountId}"
+      SourceArn: !Sub "arn:aws:s3:::textract-lambda-code-bucket-${AWS::AccountId}"
 
   # DynamoDB Table
   TextractDataTable:
@@ -106,4 +111,4 @@ Outputs:
 
   S3UploadBucketName:
     Description: Name of the S3 upload bucket
-    Value: !Ref TextractUploadBucket
+    Value: !Ref TextractLambdaCodeBucket
