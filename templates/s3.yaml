@@ -1,16 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: S3 bucket for Lambda code storage
+Description: S3 infrastructure for Textract service
 
 Parameters:
-  AccountId:
+  BucketName:
     Type: String
-    Description: AWS Account ID
+    Description: Name of the S3 bucket
 
 Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub textract-lambda-code-${AccountId}
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
 
 Outputs:
   BucketName:

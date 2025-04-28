@@ -2,39 +2,42 @@ name: Deploy S3
 
 on:
   workflow_call:
-    outputs:
+    inputs:
       bucket_name:
-        description: "S3 bucket name"
-        value: ${{ jobs.deploy.outputs.bucket_name }}
+        required: true
+        type: string
+    outputs:
+      bucket_exists:
+        description: "Whether bucket already exists"
+        value: ${{ jobs.deploy.outputs.bucket_exists }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     outputs:
-      bucket_name: ${{ steps.bucket.outputs.name }}
-    
+      bucket_exists: ${{ steps.check-bucket.outputs.exists }}
+
     steps:
       - uses: actions/checkout@v3
-
-      - name: Configure AWS Credentials
+      
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Set AWS Account ID
-        run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
-
-      - name: Deploy S3
+      - name: Check S3 Bucket
+        id: check-bucket
         run: |
-          aws cloudformation deploy \
-            --stack-name textract-s3 \
-            --template-file templates/s3.yaml \
-            --parameter-overrides \
-              AccountId=${AWS_ACCOUNT_ID}
-
-      - id: bucket
-        name: Get bucket name
-        run: |
-          echo "name=textract-lambda-code-${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
+          if aws s3api head-bucket --bucket ${{ inputs.bucket_name }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Bucket already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Creating bucket..."
+            aws cloudformation deploy \
+              --stack-name textract-s3-stack \
+              --template-file templates/s3.yaml \
+              --parameter-overrides BucketName=${{ inputs.bucket_name }}
+          fi

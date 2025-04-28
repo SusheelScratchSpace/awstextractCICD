@@ -1,4 +1,4 @@
-name: Main Deployment
+name: Main Deployment Orchestrator
 
 on:
   push:
@@ -6,6 +6,49 @@ on:
   workflow_dispatch:
 
 jobs:
+  validate-env:
+    runs-on: ubuntu-latest
+    outputs:
+      account_id: ${{ steps.set-vars.outputs.account_id }}
+      bucket_name: ${{ steps.set-vars.outputs.bucket_name }}
+    
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Set Variables
+        id: set-vars
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="textract-lambda-code-${ACCOUNT_ID}"
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+          echo "bucket_name=${BUCKET_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Validate Templates
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://templates/s3.yaml
+          aws cloudformation validate-template \
+            --template-body file://templates/textract.yaml
+
   deploy-s3:
+    needs: validate-env
     uses: ./.github/workflows/deploy-s3.yml
+    with:
+      bucket_name: ${{ needs.validate-env.outputs.bucket_name }}
+      account_id: ${{ needs.validate-env.outputs.account_id }}
+    secrets: inherit
+
+  deploy-textract:
+    needs: [validate-env, deploy-s3]
+    uses: ./.github/workflows/deploy-textract.yml
+    with:
+      bucket_name: ${{ needs.validate-env.outputs.bucket_name }}
+      account_id: ${{ needs.validate-env.outputs.account_id }}
     secrets: inherit

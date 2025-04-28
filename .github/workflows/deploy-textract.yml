@@ -13,29 +13,42 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Set account ID
+      - name: Check Stack Status
+        id: check-stack
         run: |
-          echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
+          if aws cloudformation describe-stacks --stack-name textract-stack 2>/dev/null; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query 'Stacks[0].StackStatus' --output text)
+            if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
+              echo "Deleting failed stack..."
+              aws cloudformation delete-stack --stack-name textract-stack
+              aws cloudformation wait stack-delete-complete --stack-name textract-stack
+            fi
+          fi
 
-      - name: Deploy Lambda code
+      - name: Package Lambda
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
-          aws s3 cp build/lambda_function.zip s3://${{ inputs.bucket_name }}/
+          
+      - name: Upload Lambda
+        run: |
+          aws s3 cp build/lambda_function.zip s3://${{ inputs.bucket_name }}/lambda_function.zip
 
-      - name: Deploy Textract
+      - name: Deploy Stack
         run: |
           aws cloudformation deploy \
-            --stack-name textract-service \
+            --stack-name textract-stack \
             --template-file templates/textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              AccountId=${AWS_ACCOUNT_ID} \
-              BucketName=${{ inputs.bucket_name }}
+            --parameter-overrides BucketName=${{ inputs.bucket_name }}
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf build/
