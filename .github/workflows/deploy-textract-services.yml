@@ -39,7 +39,12 @@ jobs:
           fi
           aws --version
 
-      # Step 4: Deploy CloudFormation Stack
+      # Step 4: Validate CloudFormation Template
+      - name: Validate CloudFormation Template
+        run: |
+          aws cloudformation validate-template --template-body file://textract.yaml
+
+      # Step 5: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
@@ -47,7 +52,7 @@ jobs:
             --template-file textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM
 
-      # Step 5: Wait for CloudFormation Stack to Complete
+      # Step 6: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack
         run: |
           echo "Waiting for CloudFormation stack to complete..."
@@ -58,7 +63,7 @@ jobs:
           fi
           echo "CloudFormation stack creation completed."
 
-      # Step 6: Verify Lambda Function Code Exists
+      # Step 7: Verify Lambda Function Code Exists
       - name: Verify Lambda Function Code
         run: |
           if [ ! -f src/lambda_function.py ]; then
@@ -66,18 +71,28 @@ jobs:
             exit 1
           fi
 
-      # Step 7: Zip Lambda Function Code
+      # Step 8: Zip Lambda Function Code
       - name: Zip Lambda Function Code
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
 
-      # Step 8: Upload Lambda Function Code to S3
+      # Step 9: Upload Lambda Function Code to S3
       - name: Upload Lambda Function Code to S3
         run: |
+          echo "Uploading Lambda function code to S3..."
           aws s3 cp build/lambda_function.zip s3://textract-lambda-code-bucket/lambda_function.zip
 
-      # Step 9: Cleanup Resources on Failure
+      # Step 10: Update Lambda Function Code
+      - name: Update Lambda Function Code
+        run: |
+          echo "Updating Lambda function code..."
+          aws lambda update-function-code \
+            --function-name TextractFunction \
+            --s3-bucket textract-lambda-code-bucket \
+            --s3-key lambda_function.zip
+
+      # Step 11: Cleanup Resources on Failure
       - name: Cleanup Resources
         if: failure()
         run: |
@@ -86,3 +101,11 @@ jobs:
           echo "Waiting for stack deletion to complete..."
           aws cloudformation wait stack-delete-complete --stack-name textract-stack
           echo "Stack deletion completed."
+
+      # Step 12: Cleanup Local Files
+      - name: Cleanup Local Files
+        if: always()
+        run: |
+          echo "Cleaning up local files..."
+          rm -rf build awscliv2.zip
+          echo "Local cleanup completed."
