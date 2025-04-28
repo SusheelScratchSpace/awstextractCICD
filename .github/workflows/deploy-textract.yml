@@ -1,4 +1,4 @@
-name: Textract Service Deployment
+name: Deploy Textract
 
 on:
   workflow_call:
@@ -20,25 +20,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Set AWS Account ID
-        run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
+      - name: Set account ID
+        run: |
+          echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-      - name: Prepare and Upload Lambda Code
+      - name: Deploy Lambda code
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
-          aws s3 cp build/lambda_function.zip s3://${{ inputs.bucket_name }}/lambda_function.zip
+          aws s3 cp build/lambda_function.zip s3://${{ inputs.bucket_name }}/
 
-      - name: Deploy Textract Stack
+      - name: Deploy Textract
         run: |
           aws cloudformation deploy \
-            --stack-name textract-stack \
+            --stack-name textract-service \
             --template-file templates/textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
-              AccountId=$AWS_ACCOUNT_ID \
-              LambdaCodeBucket=${{ inputs.bucket_name }}
-
-      - name: Cleanup
-        if: always()
-        run: rm -rf build
+              AccountId=${AWS_ACCOUNT_ID} \
+              BucketName=${{ inputs.bucket_name }}

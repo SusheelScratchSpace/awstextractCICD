@@ -1,0 +1,11 @@
+name: Main Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-s3:
+    uses: ./.github/workflows/deploy-s3.yml
+    secrets: inherit

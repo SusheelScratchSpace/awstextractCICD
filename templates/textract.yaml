@@ -1,48 +1,36 @@
-name: Deploy Textract Services
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Textract service infrastructure
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+Parameters:
+  AccountId:
+    Type: String
+    Description: AWS Account ID
+  BucketName:
+    Type: String
+    Description: S3 bucket containing Lambda code
 
-jobs:
-  deploy-s3:
-    uses: ./.github/workflows/deploy-s3.yml
-    secrets: inherit
+Resources:
+  TextractFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub textract-function-${AccountId}
+      Runtime: python3.8
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: lambda_function.zip
+      Timeout: 30
 
-  deploy-textract:
-    needs: deploy-s3
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Set AWS Account ID
-        run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
-
-      - name: Prepare and Upload Lambda Code
-        run: |
-          mkdir -p build
-          zip -j build/lambda_function.zip src/lambda_function.py
-          aws s3 cp build/lambda_function.zip s3://${{ needs.deploy-s3.outputs.bucket_name }}/lambda_function.zip
-
-      - name: Deploy Textract Stack
-        run: |
-          aws cloudformation deploy \
-            --stack-name textract-stack \
-            --template-file templates/textract.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              AccountId=$AWS_ACCOUNT_ID \
-              LambdaCodeBucket=${{ needs.deploy-s3.outputs.bucket_name }}
-
-      - name: Cleanup
-        if: always()
-        run: rm -rf build
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole

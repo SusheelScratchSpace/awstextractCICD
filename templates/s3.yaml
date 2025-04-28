@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 bucket for Lambda code storage
+
+Parameters:
+  AccountId:
+    Type: String
+    Description: AWS Account ID
+
+Resources:
+  LambdaCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub textract-lambda-code-${AccountId}
+
+Outputs:
+  BucketName:
+    Description: Name of the created S3 bucket
+    Value: !Ref LambdaCodeBucket
