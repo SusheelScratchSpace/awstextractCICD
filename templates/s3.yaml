@@ -1,20 +1,24 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: S3 infrastructure for Textract service
 
-Parameters:
-  BucketName:
-    Type: String
-    Description: Name of the S3 bucket
-
 Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref BucketName
+      BucketName: textract-lambda-code-bucket-2024
       VersioningConfiguration:
         Status: Enabled
 
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: textract-source-docs-2024
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt TextractFunction.Arn
+
 Outputs:
-  BucketName:
-    Description: Name of the created S3 bucket
-    Value: !Ref LambdaCodeBucket
+  LambdaCodeBucketName:
+    Description: Name of the Lambda code bucket
+    Value: textract-lambda-code-bucket-2024

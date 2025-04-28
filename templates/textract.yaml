@@ -1,30 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Textract service infrastructure
 
-Parameters:
-  AccountId:
-    Type: String
-    Description: AWS Account ID
-  BucketName:
-    Type: String
-    Description: S3 bucket containing Lambda code
-
 Resources:
   TextractFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub textract-function-${AccountId}
+      FunctionName: TextractFunction
       Runtime: python3.8
       Handler: lambda_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: !Ref BucketName
+        S3Bucket: textract-lambda-code-bucket-2024
         S3Key: lambda_function.zip
-      Timeout: 30
+      Environment:
+        Variables:
+          SOURCE_BUCKET: textract-source-docs-2024
+      Timeout: 300
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: textract-lambda-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -34,3 +30,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: TextractAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - textract:*
+                  - s3:GetObject
+                Resource: 
+                  - arn:aws:s3:::textract-source-docs-2024/*
+                  - arn:aws:s3:::textract-lambda-code-bucket-2024/*

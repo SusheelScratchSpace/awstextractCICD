@@ -10,6 +10,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      LAMBDA_BUCKET: "textract-lambda-code-bucket-2024"
     steps:
       - uses: actions/checkout@v3
 
@@ -36,10 +38,10 @@ jobs:
         run: |
           mkdir -p build
           zip -j build/lambda_function.zip src/lambda_function.py
-          
+
       - name: Upload Lambda
         run: |
-          aws s3 cp build/lambda_function.zip s3://${{ inputs.bucket_name }}/lambda_function.zip
+          aws s3 cp build/lambda_function.zip s3://${LAMBDA_BUCKET}/lambda_function.zip
 
       - name: Deploy Stack
         run: |
@@ -47,7 +49,7 @@ jobs:
             --stack-name textract-stack \
             --template-file templates/textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides BucketName=${{ inputs.bucket_name }}
+            --parameter-overrides BucketName=${LAMBDA_BUCKET}
 
       - name: Cleanup
         if: always()

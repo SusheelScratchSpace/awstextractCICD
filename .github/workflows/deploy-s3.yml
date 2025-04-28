@@ -2,13 +2,9 @@ name: Deploy S3
 
 on:
   workflow_call:
-    inputs:
-      bucket_name:
-        required: true
-        type: string
     outputs:
       bucket_exists:
-        description: "Whether bucket already exists"
+        description: "Whether buckets already exist"
         value: ${{ jobs.deploy.outputs.bucket_exists }}
 
 jobs:
@@ -16,10 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bucket_exists: ${{ steps.check-bucket.outputs.exists }}
+    env:
+      LAMBDA_BUCKET: textract-lambda-code-bucket-2024
+      SOURCE_BUCKET: textract-source-docs-2024
 
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -27,17 +26,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Check S3 Bucket
+      - name: Check S3 Buckets
         id: check-bucket
         run: |
-          if aws s3api head-bucket --bucket ${{ inputs.bucket_name }} 2>/dev/null; then
+          if aws s3api head-bucket --bucket ${LAMBDA_BUCKET} 2>/dev/null && \
+             aws s3api head-bucket --bucket ${SOURCE_BUCKET} 2>/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Bucket already exists"
+            echo "Buckets already exist"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Creating bucket..."
+            echo "Creating buckets..."
             aws cloudformation deploy \
               --stack-name textract-s3-stack \
               --template-file templates/s3.yaml \
-              --parameter-overrides BucketName=${{ inputs.bucket_name }}
+              --capabilities CAPABILITY_NAMED_IAM
           fi
