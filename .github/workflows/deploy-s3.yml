@@ -1,4 +1,4 @@
-name: S3 Infrastructure Deployment
+name: Deploy S3
 
 on:
   workflow_call:
@@ -11,8 +11,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     outputs:
-      bucket_name: ${{ steps.set-bucket.outputs.bucket_name }}
-
+      bucket_name: ${{ steps.bucket.outputs.name }}
+    
     steps:
       - uses: actions/checkout@v3
 
@@ -26,14 +26,15 @@ jobs:
       - name: Set AWS Account ID
         run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)" >> $GITHUB_ENV
 
-      - name: Deploy S3 Stack
+      - name: Deploy S3
         run: |
           aws cloudformation deploy \
-            --stack-name textract-s3-stack \
-            --template-file templates/s3-bucket.yaml \
-            --parameter-overrides AccountId=$AWS_ACCOUNT_ID
+            --stack-name textract-s3 \
+            --template-file templates/s3.yaml \
+            --parameter-overrides \
+              AccountId=${AWS_ACCOUNT_ID}
 
-      - name: Set Bucket Name
-        id: set-bucket
+      - id: bucket
+        name: Get bucket name
         run: |
-          echo "bucket_name=textract-lambda-code-bucket-$AWS_ACCOUNT_ID" >> $GITHUB_OUTPUT
+          echo "name=textract-lambda-code-${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
