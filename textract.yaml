@@ -44,7 +44,7 @@ Resources:
       Code:
         S3Bucket: textract-lambda-code-bucket  # Static name for the Lambda code bucket
         S3Key: lambda_function.zip
-      Timeout: 300
+      Timeout: 301
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: TextractDataTable  # Static name for the DynamoDB table
