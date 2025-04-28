@@ -13,12 +13,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: textract-source-docs-2024
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt TextractFunction.Arn
 
 Outputs:
   LambdaCodeBucketName:
     Description: Name of the Lambda code bucket
-    Value: textract-lambda-code-bucket-2024
+    Value: !Ref LambdaCodeBucket
+  
+  SourceBucketName:
+    Description: Name of the source bucket
+    Value: !Ref SourceBucket
