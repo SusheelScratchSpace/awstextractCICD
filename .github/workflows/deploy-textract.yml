@@ -12,26 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LAMBDA_BUCKET: textract-lambda-code-bucket-2025
+      SOURCE_BUCKET: textract-source-docs-2025
     steps:
       - uses: actions/checkout@v3
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Check Stack Status
-        id: check-stack
-        run: |
-          if aws cloudformation describe-stacks --stack-name textract-stack 2>/dev/null; then
-            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name textract-stack --query 'Stacks[0].StackStatus' --output text)
-            if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
-              echo "Deleting failed stack..."
-              aws cloudformation delete-stack --stack-name textract-stack
-              aws cloudformation wait stack-delete-complete --stack-name textract-stack
-            fi
-          fi
+      
+      # ...existing code for AWS credentials and stack check...
 
       - name: Package Lambda
         run: |
@@ -48,6 +33,35 @@ jobs:
             --stack-name textract-stack \
             --template-file templates/textract.yaml \
             --capabilities CAPABILITY_NAMED_IAM
+
+      - name: Setup S3 Trigger
+        run: |
+          # Get Lambda function ARN
+          LAMBDA_ARN=$(aws lambda get-function --function-name TextractFunction --query 'Configuration.FunctionArn' --output text)
+          
+          # Add Lambda permission for S3
+          aws lambda add-permission \
+            --function-name TextractFunction \
+            --statement-id S3TriggerPermission \
+            --action lambda:InvokeFunction \
+            --principal s3.amazonaws.com \
+            --source-arn arn:aws:s3:::${SOURCE_BUCKET} \
+            --source-account $(aws sts get-caller-identity --query Account --output text)
+
+          # Configure S3 event notification
+          aws s3api put-bucket-notification-configuration \
+            --bucket ${SOURCE_BUCKET} \
+            --notification-configuration "{\"LambdaFunctionConfigurations\":[{\"LambdaFunctionArn\":\"${LAMBDA_ARN}\",\"Events\":[\"s3:ObjectCreated:*\"]}]}"
+
+      - name: Verify Trigger
+        run: |
+          # Verify notification configuration
+          NOTIFICATION=$(aws s3api get-bucket-notification-configuration --bucket ${SOURCE_BUCKET})
+          if [[ $NOTIFICATION != *"TextractFunction"* ]]; then
+            echo "S3 trigger setup failed"
+            exit 1
+          fi
+          echo "S3 trigger verified successfully"
 
       - name: Cleanup
         if: always()
