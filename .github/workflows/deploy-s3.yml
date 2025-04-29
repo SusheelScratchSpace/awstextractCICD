@@ -17,8 +17,8 @@ jobs:
       bucket_exists: ${{ steps.check-bucket.outputs.exists }}
       trigger_updated: ${{ steps.check-trigger.outputs.updated }}
     env:
-      LAMBDA_BUCKET: textract-lambda-code-bucket-2024
-      SOURCE_BUCKET: textract-source-docs-2024
+      LAMBDA_BUCKET: textract-lambda-code-bucket-2025
+      SOURCE_BUCKET: textract-source-docs-2025
 
     steps:
       - uses: actions/checkout@v3

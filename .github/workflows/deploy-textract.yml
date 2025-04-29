@@ -11,7 +11,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      LAMBDA_BUCKET: textract-lambda-code-bucket-2024
+      LAMBDA_BUCKET: textract-lambda-code-bucket-2025
     steps:
       - uses: actions/checkout@v3
       - name: Configure AWS

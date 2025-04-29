@@ -5,14 +5,14 @@ Resources:
   LambdaCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: textract-lambda-code-bucket-2024
+      BucketName: textract-lambda-code-bucket-2025
       VersioningConfiguration:
         Status: Enabled
 
   SourceBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: textract-source-docs-2024
+      BucketName: textract-source-docs-2025
 
 Outputs:
   LambdaCodeBucketName:
