@@ -7,6 +7,7 @@ def lambda_handler(event, context):
     # Initialize AWS clients
     textract = boto3.client('textract')
     dynamodb = boto3.resource('dynamodb')
+    s3 = boto3.client('s3')
     
     # Get environment variables
     table_name = os.environ['DYNAMODB_TABLE']
@@ -27,20 +28,19 @@ def lambda_handler(event, context):
             }
         )
         
-        # Process the response
-        text_blocks = []
-        for block in response['Blocks']:
-            if block['BlockType'] == 'LINE':
-                text_blocks.append(block['Text'])
-                
+        # Extract text from Textract response
+        extracted_text = []
+        for item in response['Blocks']:
+            if item['BlockType'] == 'LINE':
+                extracted_text.append(item['Text'])
+        
         # Store results in DynamoDB
         table.put_item(
             Item={
-                'DocumentId': f"{document}-{datetime.now().isoformat()}",
+                'DocumentId': document,
                 'Bucket': bucket,
-                'Document': document,
-                'TextBlocks': text_blocks,
-                'ProcessedAt': datetime.now().isoformat()
+                'ExtractedText': extracted_text,
+                'ProcessedTime': datetime.utcnow().isoformat()
             }
         )
         
